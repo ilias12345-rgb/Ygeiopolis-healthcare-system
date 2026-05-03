@@ -1,0 +1,14 @@
+# Generated data bundles
+hospital_dataset_bundle/
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/
