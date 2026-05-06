@@ -1,3 +1,9 @@
+"""Generate deterministic CSV data for the Ygeiopolis hospital schema.
+
+The generator combines cleaned official reference files, when available, with
+synthetic transactional data designed to exercise the schema constraints,
+triggers, views, and final reporting queries.
+"""
 
 from __future__ import annotations
 import argparse
@@ -181,6 +187,8 @@ def unique_amka(start_num: int) -> str:
 
 
 class BedAllocator:
+    """Track bed usage while synthetic hospitalizations are being created."""
+
     def __init__(self, beds_df: pd.DataFrame):
         self.by_dept = defaultdict(list)
         for row in beds_df.itertuples(index=False):
@@ -277,6 +285,8 @@ def read_excel_flexible(path: Path, **kwargs):
 
 
 def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | None = None, allow_demo_drugs: bool = True):
+    """Load official reference sources and write normalized reference CSVs."""
+
     out_ref_dir.mkdir(parents=True, exist_ok=True)
 
     # ICD-10
@@ -459,6 +469,8 @@ def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | No
 
 
 def build_people_and_org(gen_dir: Path):
+    """Create departments, staff, beds, and operating/procedure places."""
+
     departments = []
     floor_labels = ["B1/Building A", "1/Building A", "2/Building A", "3/Building A", "1/Building B", "2/Building B", "3/Building B"]
     for idx, (dname, _) in enumerate(DEPARTMENT_SPECS, start=1):
@@ -649,6 +661,8 @@ def build_people_and_org(gen_dir: Path):
 
 
 def build_patients(gen_dir: Path, count=230):
+    """Create patients and optional emergency contacts."""
+
     patient_rows, contact_rows = [], []
     amka_counter = 30000000000
     for i in range(count):
@@ -692,6 +706,8 @@ def build_patients(gen_dir: Path, count=230):
 
 
 def build_shifts(gen_dir: Path, org):
+    """Create a one-week roster that respects the schema shift rules."""
+
     dept_df = org["department"]
     doctor_df = org["doctor"]
     nurse_df = org["nurse"]
@@ -775,6 +791,8 @@ def build_shifts(gen_dir: Path, org):
 
 
 def build_emergency_visits(gen_dir: Path, patients, org, count=650):
+    """Create emergency visits with triage levels and service timestamps."""
+
     patient_df = patients["patient"]
     nurse_df = org["nurse"]
     dep_df = org["department"]
@@ -823,6 +841,8 @@ def build_emergency_visits(gen_dir: Path, patients, org, count=650):
 
 
 def build_clinical_events(gen_dir: Path, ref, org, patients):
+    """Create hospitalizations and related clinical events."""
+
     dept_df = org["department"]
     bed_df = org["bed"]
     patient_df = patients["patient"]
@@ -1048,6 +1068,10 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
     proc_event_id = 1
     place_schedules = defaultdict(list)
     doctor_schedules = defaultdict(list)
+    staff_schedules = defaultdict(list)
+
+    def staff_is_available(amka, start_ts, end_ts):
+        return all(not (start_ts < e and s < end_ts) for s, e in staff_schedules[amka])
 
     # pick top surgeons to dominate
     surgeon_candidates = doctor_df[doctor_df["specialization"].isin(["GENERAL_SURGERY","ORTHOPEDICS","CARDIOLOGY","GASTROENTEROLOGY","NEUROLOGY"])]
@@ -1077,8 +1101,11 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
                 continue
             if any(start_ts < e and s < end_ts for s, e in doctor_schedules[chief]):
                 continue
+            if not staff_is_available(chief, start_ts, end_ts):
+                continue
             place_schedules[place_id].append((start_ts, end_ts))
             doctor_schedules[chief].append((start_ts, end_ts))
+            staff_schedules[chief].append((start_ts, end_ts))
             proc_event_rows.append({
                 "procedure_event_id": proc_event_id,
                 "hosp_id": row.hosp_id,
@@ -1091,11 +1118,22 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
             })
             # participants: 1-2 doctors + 1 nurse
             dep_id = int(row.department_id)
-            dep_doc_pool = [d["amka"] for d in docs_by_dep[dep_id] if d["amka"] != chief]
-            dep_nurse_pool = nurses_by_dep[dep_id]
+            dep_doc_pool = [
+                d["amka"]
+                for d in docs_by_dep[dep_id]
+                if d["amka"] != chief and staff_is_available(d["amka"], start_ts, end_ts)
+            ]
+            dep_nurse_pool = [
+                amka for amka in nurses_by_dep[dep_id]
+                if staff_is_available(amka, start_ts, end_ts)
+            ]
             for helper in random.sample(dep_doc_pool, k=min(len(dep_doc_pool), random.randint(1, 2))):
                 proc_part_rows.append({"procedure_event_id": proc_event_id, "personnel_amka": helper, "participant_role": "ASSISTANT_DOCTOR"})
-            proc_part_rows.append({"procedure_event_id": proc_event_id, "personnel_amka": pick(dep_nurse_pool), "participant_role": "SCRUB_NURSE"})
+                staff_schedules[helper].append((start_ts, end_ts))
+            if dep_nurse_pool:
+                nurse_helper = pick(dep_nurse_pool)
+                proc_part_rows.append({"procedure_event_id": proc_event_id, "personnel_amka": nurse_helper, "participant_role": "SCRUB_NURSE"})
+                staff_schedules[nurse_helper].append((start_ts, end_ts))
             proc_event_id += 1
             placed = True
             break

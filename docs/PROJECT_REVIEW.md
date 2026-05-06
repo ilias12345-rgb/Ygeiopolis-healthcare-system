@@ -6,6 +6,9 @@
 - Replaced the empty root README with a project explanation, run instructions, and structure map.
 - Added SQL and generator-specific README files.
 - Added `sql/validation.sql` with post-load sanity checks.
+- Added the emergency priority FIFO queue view and procedures.
+- Added reusable reporting views for beds, occupancy, active admissions, patient history, doctor workload, prescriptions, and shift rosters.
+- Added stored procedures for common workflows: admission, discharge, safe prescription, procedure scheduling, participant assignment, shift assignment, and post-discharge evaluation.
 - Aligned `sql/schema.sql` with the loader/generator columns:
   - added `icd10_ken_map`;
   - added `bed.bed_number`;
@@ -28,7 +31,6 @@
 - A reproducible `data/` bundle, or clear instructions for where the required official source workbooks must be placed.
 - Official KEN and EMA drug data replacement if the final exercise requires only official reference data.
 - More negative trigger test cases, for example insert attempts that should fail.
-- More views and stored procedures for common workflows.
 - A short submission note explaining which data is official, which is synthetic, and why.
 
 ## Code Quality Notes
@@ -36,4 +38,4 @@
 - The schema is strong in relational structure: primary keys, foreign keys, check constraints, indexes, and business-rule triggers are all present.
 - The generator is useful because it creates query-driven data instead of random-only data.
 - Some trigger logic is complex. For final submission, add small SQL test cases proving each trigger blocks invalid data.
-- Some indexes are marked with comments such as "maybe delete". These should be checked with `EXPLAIN` once the final query file exists.
+- Indexes should be checked with `EXPLAIN` once the final query file exists, then pruned to match the actual workload.

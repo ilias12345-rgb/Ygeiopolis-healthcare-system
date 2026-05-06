@@ -350,7 +350,7 @@ CREATE TABLE hospitalization_doctor (
 
 CREATE TABLE lab_test_catalog (
     test_code               VARCHAR(30) PRIMARY KEY,
-    test_name               VARCHAR(255) NOT NULL,
+    test_name               TEXT NOT NULL,
     test_type               VARCHAR(80) NOT NULL
 );
 
@@ -381,7 +381,7 @@ CREATE TABLE lab_test (
 
 CREATE TABLE procedure_catalog (
     procedure_code          VARCHAR(30) PRIMARY KEY,
-    procedure_name          VARCHAR(255) NOT NULL,
+    procedure_name          TEXT NOT NULL,
     procedure_category      VARCHAR(20) NOT NULL,
     required_place_type     VARCHAR(30) NOT NULL,
     CONSTRAINT ck_procedure_category CHECK (procedure_category IN ('SURGICAL', 'DIAGNOSTIC', 'THERAPEUTIC')),
@@ -536,85 +536,301 @@ CREATE TABLE entity_image (
         ON UPDATE CASCADE
 );
 
-/* Indexes for the requested queries */
+/* ---------------------------------------------------------------------------
+   Query-support indexes.
+   These indexes support the exercise queries, reporting views, and trigger
+   lookups. Final pruning should be done after sql/queries.sql is complete and
+   every query has been checked with EXPLAIN.
+--------------------------------------------------------------------------- */
 
-CREATE INDEX idx_doctor_specialization_rank /*Για ερώτημα 2, μπορούμε να βρούμε την ειδικότητα και να συνεχίσει πιο γρήγορα το query*/
+/* Q2: helps filter doctors by specialization and rank. */
+CREATE INDEX idx_doctor_specialization_rank
     ON doctor (specialization, doctor_rank);
 
-CREATE INDEX idx_doctor_supervisor /*Για ερώτημα 13 για να βρούμε την σειρά ιεραρχίας*/
+/* Q13: helps follow the doctor supervision hierarchy. */
+CREATE INDEX idx_doctor_supervisor
     ON doctor (supervisor_amka);
 
-CREATE INDEX idx_nurse_department_rank /*Για Q8 και για Q12 για να βρούμε τους νοσηλευτές ενός τμήματος με συγκεκριμένη βαθμίδα πιο γρήγορα*/
+/* Q8, Q12: helps find nurses in a department by rank. */
+CREATE INDEX idx_nurse_department_rank
     ON nurse (department_id, nurse_rank);
 
-CREATE INDEX idx_admin_department_role /*To ίδιο με το προηγούμενο για το διοικητικό προσωπικό για Q8 και Q12 για να βρούμε τους διοικητικούς ενός τμήματος με συγκεκριμένο ρόλο πιο γρήγορα*/
+/* Q8, Q12: helps find administrative staff in a department by role. */
+CREATE INDEX idx_admin_department_role
     ON administrative_staff (department_id, admin_role);
 
-CREATE INDEX idx_doctor_department_department /*Q12 για να βρούμε τους γιατρούς ενός τμήματος πιο γρήγορα*/
+/* Q12: helps list doctors assigned to a department. */
+CREATE INDEX idx_doctor_department_department
     ON doctor_department (department_id, doctor_amka);
 
-CREATE INDEX idx_shift_department_date_type 
-    ON department_shift (department_id, shift_date, shift_type); /* Q8, Q12 για να βρούμε τις βάρδιες ενός τμήματος σε συγκεκριμένη ημερομηνία και τύπο πιο γρήγορα */
+/* Q8, Q12: helps find department shifts by date and shift type. */
+CREATE INDEX idx_shift_department_date_type
+    ON department_shift (department_id, shift_date, shift_type);
 
+/* Q8, Q12: helps find shifts assigned to a specific staff member. */
 CREATE INDEX idx_shift_assignment_personnel
-    ON shift_assignment (personnel_amka, shift_id); /* Q8, Q12 για να βρούμε τις βάρδιες ενός νοσηλευτή ή διοικητικού προσωπικού πιο γρήγορα */
+    ON shift_assignment (personnel_amka, shift_id);
 
-CREATE INDEX idx_emergency_visit_level_arrival /* Q15 για να βρούμε τις επείγουσες επισκέψεις με συγκεκριμένο επίπεδο επείγοντος και χρονικό διάστημα άφιξης πιο γρήγορα */
+/* Q15 and FIFO queue: helps order emergency visits by severity and arrival time. */
+CREATE INDEX idx_emergency_visit_level_arrival
     ON emergency_visit (emergency_level, arrival_ts);
 
-CREATE INDEX idx_emergency_visit_referred_department /* Q15 για να βρούμε τις επείγουσες επισκέψεις που παραπέμφθηκαν σε συγκεκριμένο τμήμα πιο γρήγορα */
+/* Q15 and FIFO queue: helps filter emergency visits by referred department. */
+CREATE INDEX idx_emergency_visit_referred_department
     ON emergency_visit (referred_department_id);
 
-CREATE INDEX idx_hosp_patient_dept_dates /*Q3, Q6 , Q9 για να βρούμε τις νοσηλείες ενός ασθενή σε συγκεκριμένο τμήμα και χρονικό διάστημα πιο γρήγορα*/
+/* Q3, Q6, Q9: helps find patient hospitalizations by department and dates. */
+CREATE INDEX idx_hosp_patient_dept_dates
     ON hospitalization (patient_amka, department_id, admission_ts, discharge_ts);
 
-CREATE INDEX idx_hosp_department_admission /*Q1 για να βρούμε τις νοσηλείες ενός τμήματος με συγκεκριμένη ημερομηνία εισαγωγής πιο γρήγορα*/
+/* Q1: helps find hospitalizations for a department by admission date. */
+CREATE INDEX idx_hosp_department_admission
     ON hospitalization (department_id, admission_ts);
 
-CREATE INDEX idx_hosp_ken /*Q1 για να βρούμε τις νοσηλείες με συγκεκριμένο κεν πιο γρήγορα*/
+/* Q1: helps find hospitalizations by KEN code. */
+CREATE INDEX idx_hosp_ken
     ON hospitalization (ken_code);
 
-CREATE INDEX idx_hosp_admission_icd10 /*Q14 για να βρούμε τις νοσηλείες με συγκεκριμένο κωδικό διάγνωσης εισαγωγής πιο γρήγορα*/
+/* Q14: helps group/filter hospitalizations by admission ICD-10 code. */
+CREATE INDEX idx_hosp_admission_icd10
     ON hospitalization (admission_icd10_code);
 
+/* Q14: helps match ICD-10 prefixes to KEN codes. */
 CREATE INDEX idx_icd10_ken_map_prefix
     ON icd10_ken_map (icd10_code_prefix, ken_code);
 
+/* Bed/occupancy views: helps filter beds by department, status, and type. */
 CREATE INDEX idx_bed_department_status
     ON bed (department_id, bed_status, bed_type);
 
-CREATE INDEX idx_lab_test_hosp_code /* Μαλλον για σβησιμο */
+/* Lab reporting: helps find tests for a hospitalization by code and date. */
+CREATE INDEX idx_lab_test_hosp_code
     ON lab_test (hosp_id, test_code, test_datetime);
 
-CREATE INDEX idx_lab_test_ordering_doctor /* Μαλλον για σβησιμο */
+/* Lab reporting: helps find tests ordered by a doctor over time. */
+CREATE INDEX idx_lab_test_ordering_doctor
     ON lab_test (ordered_by_doctor_amka, test_datetime);
 
-CREATE INDEX idx_proc_event_hosp_start /*Μάλλον για τροποποιηση*/
+/* Procedure reporting: helps find procedures for a hospitalization by start time. */
+CREATE INDEX idx_proc_event_hosp_start
     ON procedure_event (hosp_id, start_ts);
 
-CREATE INDEX idx_proc_event_chief /*Q2,Q5,Q11 ίσως*/
+/* Q2, Q5, Q11: helps count/find procedures by chief surgeon. */
+CREATE INDEX idx_proc_event_chief
     ON procedure_event (chief_surgeon_amka, start_ts);
 
-CREATE INDEX idx_proc_event_place /*Ελεγχος overlap για το ίδιο μέρος πιο γρήγορα -> Triggers*/
+/* Trigger support: helps detect overlapping procedures in the same place. */
+CREATE INDEX idx_proc_event_place
     ON procedure_event (place_id, start_ts, end_ts);
 
-CREATE INDEX idx_proc_participant_personnel /*Q11*/
+/* Q11: helps find procedure participation by staff member. */
+CREATE INDEX idx_proc_participant_personnel
     ON procedure_participant (personnel_amka, procedure_event_id);
 
-CREATE INDEX idx_prescription_hosp_patient_start /*Q10 για να βρούμε τις συνταγές ενός ασθενή σε συγκεκριμένη νοσηλεία*/
+/* Q10: helps find prescriptions for a patient during a hospitalization. */
+CREATE INDEX idx_prescription_hosp_patient_start
     ON prescription (hosp_id, patient_amka, start_datetime);
 
-CREATE INDEX idx_prescription_doctor /* Μαλλον για σβησιμο */
+/* Prescription reporting: helps find prescriptions by doctor and date. */
+CREATE INDEX idx_prescription_doctor
     ON prescription (doctor_amka, start_datetime);
 
-CREATE INDEX idx_das_substance /*Q7 για να βρούμε τα φάρμακα που περιέχουν μια δραστική ουσία πιο γρήγορα*/
+/* Q7: helps find drugs that contain a specific active substance. */
+CREATE INDEX idx_das_substance
     ON drug_active_substance (substance_id, drug_id);
 
-CREATE INDEX idx_patient_allergy_substance /*Q7 για να βρούμε τους ασθενείς που είναι αλλεργικοί σε μια δραστική ουσία πιο γρήγορα*/
+/* Q7: helps find patients allergic to a specific active substance. */
+CREATE INDEX idx_patient_allergy_substance
     ON patient_allergy (substance_id, patient_amka);
 
-CREATE INDEX idx_evaluation_date /*??*/
+/* Evaluation reporting: helps filter evaluations by date. */
+CREATE INDEX idx_evaluation_date
     ON hospitalization_evaluation (evaluation_date);
+
+/* ---------------------------------------------------------------------------
+   Reporting views.
+   These views keep common reporting joins in one place and make the final
+   exercise queries easier to read without changing the underlying tables.
+--------------------------------------------------------------------------- */
+
+CREATE VIEW v_emergency_fifo_queue AS
+SELECT
+    ROW_NUMBER() OVER (
+        PARTITION BY ev.referred_department_id
+        ORDER BY ev.emergency_level, ev.arrival_ts, ev.visit_id
+    ) AS queue_position,
+    ev.visit_id,
+    ev.patient_amka,
+    CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
+    ev.emergency_level,
+    ev.arrival_ts,
+    ev.referred_department_id,
+    d.department_name AS referred_department_name,
+    ev.symptoms
+FROM emergency_visit ev
+JOIN patient p ON p.patient_amka = ev.patient_amka
+LEFT JOIN department d ON d.department_id = ev.referred_department_id
+WHERE ev.service_start_ts IS NULL;
+
+CREATE VIEW v_current_bed_status AS
+SELECT
+    d.department_id,
+    d.department_name,
+    b.bed_id,
+    b.bed_number,
+    b.bed_type,
+    b.bed_status AS recorded_status,
+    CASE
+        WHEN h.hosp_id IS NOT NULL THEN 'OCCUPIED'
+        ELSE b.bed_status
+    END AS current_status,
+    h.hosp_id AS current_hosp_id,
+    h.patient_amka AS current_patient_amka
+FROM bed b
+JOIN department d ON d.department_id = b.department_id
+LEFT JOIN hospitalization h
+    ON h.bed_id = b.bed_id
+   AND h.admission_ts <= NOW()
+   AND (h.discharge_ts IS NULL OR h.discharge_ts > NOW());
+
+CREATE VIEW v_active_hospitalizations AS
+SELECT
+    h.hosp_id,
+    h.patient_amka,
+    CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
+    h.department_id,
+    d.department_name,
+    h.bed_id,
+    b.bed_number,
+    h.ken_code,
+    k.ken_description,
+    h.admission_ts,
+    h.discharge_ts,
+    h.total_cost
+FROM hospitalization h
+JOIN patient p ON p.patient_amka = h.patient_amka
+JOIN department d ON d.department_id = h.department_id
+JOIN bed b ON b.bed_id = h.bed_id
+JOIN ken k ON k.ken_code = h.ken_code
+WHERE h.admission_ts <= NOW()
+  AND (h.discharge_ts IS NULL OR h.discharge_ts > NOW());
+
+CREATE VIEW v_patient_history AS
+SELECT
+    p.patient_amka,
+    CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
+    p.age,
+    p.gender,
+    p.insurance_provider,
+    h.hosp_id,
+    d.department_name,
+    h.admission_ts,
+    h.discharge_ts,
+    h.admission_icd10_code,
+    adm.icd10_description AS admission_diagnosis,
+    h.discharge_icd10_code,
+    dis.icd10_description AS discharge_diagnosis,
+    h.ken_code,
+    k.ken_description,
+    h.total_cost
+FROM patient p
+LEFT JOIN hospitalization h ON h.patient_amka = p.patient_amka
+LEFT JOIN department d ON d.department_id = h.department_id
+LEFT JOIN icd10_diagnosis adm ON adm.icd10_code = h.admission_icd10_code
+LEFT JOIN icd10_diagnosis dis ON dis.icd10_code = h.discharge_icd10_code
+LEFT JOIN ken k ON k.ken_code = h.ken_code;
+
+CREATE VIEW v_doctor_workload AS
+SELECT
+    d.amka AS doctor_amka,
+    CONCAT(p.first_name, ' ', p.last_name) AS doctor_name,
+    d.specialization,
+    d.doctor_rank,
+    COALESCE(hc.hospitalization_count, 0) AS hospitalization_count,
+    COALESCE(pc.chief_procedure_count, 0) AS chief_procedure_count,
+    COALESCE(sc.shift_count, 0) AS shift_count
+FROM doctor d
+JOIN personnel p ON p.amka = d.amka
+LEFT JOIN (
+    SELECT doctor_amka, COUNT(DISTINCT hosp_id) AS hospitalization_count
+    FROM hospitalization_doctor
+    GROUP BY doctor_amka
+) hc ON hc.doctor_amka = d.amka
+LEFT JOIN (
+    SELECT chief_surgeon_amka, COUNT(*) AS chief_procedure_count
+    FROM procedure_event
+    GROUP BY chief_surgeon_amka
+) pc ON pc.chief_surgeon_amka = d.amka
+LEFT JOIN (
+    SELECT personnel_amka, COUNT(*) AS shift_count
+    FROM shift_assignment
+    GROUP BY personnel_amka
+) sc ON sc.personnel_amka = d.amka;
+
+CREATE VIEW v_department_occupancy AS
+SELECT
+    d.department_id,
+    d.department_name,
+    COUNT(b.bed_id) AS total_beds,
+    SUM(CASE WHEN h.hosp_id IS NOT NULL THEN 1 ELSE 0 END) AS occupied_beds,
+    SUM(CASE WHEN h.hosp_id IS NULL AND b.bed_status = 'AVAILABLE' THEN 1 ELSE 0 END) AS available_beds,
+    SUM(CASE WHEN b.bed_status = 'MAINTENANCE' THEN 1 ELSE 0 END) AS maintenance_beds,
+    ROUND(
+        100 * SUM(CASE WHEN h.hosp_id IS NOT NULL THEN 1 ELSE 0 END) / NULLIF(COUNT(b.bed_id), 0),
+        2
+    ) AS occupancy_percentage
+FROM department d
+LEFT JOIN bed b ON b.department_id = d.department_id
+LEFT JOIN hospitalization h
+    ON h.bed_id = b.bed_id
+   AND h.admission_ts <= NOW()
+   AND (h.discharge_ts IS NULL OR h.discharge_ts > NOW())
+GROUP BY d.department_id, d.department_name;
+
+CREATE VIEW v_prescription_substances AS
+SELECT
+    pr.prescription_id,
+    pr.hosp_id,
+    pr.patient_amka,
+    CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
+    pr.doctor_amka,
+    CONCAT(docp.first_name, ' ', docp.last_name) AS doctor_name,
+    pr.drug_id,
+    dr.drug_name,
+    s.substance_id,
+    s.substance_name,
+    pr.dosage,
+    pr.frequency,
+    pr.start_datetime,
+    pr.end_datetime
+FROM prescription pr
+JOIN patient p ON p.patient_amka = pr.patient_amka
+JOIN personnel docp ON docp.amka = pr.doctor_amka
+JOIN drug dr ON dr.drug_id = pr.drug_id
+JOIN drug_active_substance das ON das.drug_id = pr.drug_id
+JOIN active_substance s ON s.substance_id = das.substance_id;
+
+CREATE VIEW v_shift_roster AS
+SELECT
+    ds.shift_id,
+    ds.department_id,
+    d.department_name,
+    ds.shift_date,
+    ds.shift_type,
+    ds.start_time,
+    ds.end_time,
+    sa.personnel_amka,
+    CONCAT(p.first_name, ' ', p.last_name) AS staff_name,
+    p.personnel_type,
+    COALESCE(doc.doctor_rank, n.nurse_rank, a.admin_role) AS staff_detail,
+    sa.assigned_role
+FROM department_shift ds
+JOIN department d ON d.department_id = ds.department_id
+JOIN shift_assignment sa ON sa.shift_id = ds.shift_id
+JOIN personnel p ON p.amka = sa.personnel_amka
+LEFT JOIN doctor doc ON doc.amka = p.amka
+LEFT JOIN nurse n ON n.amka = p.amka
+LEFT JOIN administrative_staff a ON a.amka = p.amka;
 
 
 /* Triggers for key business rules */
@@ -625,7 +841,7 @@ CREATE TRIGGER trg_doctor_supervision_bi
 BEFORE INSERT ON doctor
 FOR EACH ROW
 BEGIN
-DECLARE current_amka CHAR(11);
+    DECLARE current_amka CHAR(11);
     IF NEW.supervisor_amka = NEW.amka THEN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'A doctor cannot supervise himself/herself.';
@@ -644,10 +860,10 @@ DECLARE current_amka CHAR(11);
     IF NEW.supervisor_amka IS NOT NULL THEN
         SET current_amka = NEW.supervisor_amka;
         WHILE current_amka IS NOT NULL DO
-            IF current_amka = NEW.amka THEN /* έφτασα σε κύκλο */
+            IF current_amka = NEW.amka THEN /* Cycle detected in the supervision chain. */
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Circular supervision chain detected.';
             END IF;
-            SELECT supervisor_amka INTO current_amka FROM doctor WHERE amka = current_amka; /*ελέγχω τον επόμενο */
+            SELECT supervisor_amka INTO current_amka FROM doctor WHERE amka = current_amka; /* Move one level up the chain. */
         END WHILE;
     END IF;
 END$$
@@ -656,7 +872,7 @@ CREATE TRIGGER trg_doctor_supervision_bu
 BEFORE UPDATE ON doctor
 FOR EACH ROW
 BEGIN
-DECLARE current_amka CHAR(11);
+    DECLARE current_amka CHAR(11);
     IF NEW.supervisor_amka = NEW.amka THEN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'A doctor cannot supervise himself/herself.';
@@ -675,23 +891,23 @@ DECLARE current_amka CHAR(11);
     IF NEW.supervisor_amka IS NOT NULL THEN
         SET current_amka = NEW.supervisor_amka;
         WHILE current_amka IS NOT NULL DO
-            IF current_amka = NEW.amka THEN /* Εφτασα σε κύκλο */
+            IF current_amka = NEW.amka THEN /* Cycle detected in the supervision chain. */
                 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Circular supervision chain detected.';
             END IF;
-            SELECT supervisor_amka INTO current_amka FROM doctor WHERE amka = current_amka; /*ελέγχω τον επόμενο */
+            SELECT supervisor_amka INTO current_amka FROM doctor WHERE amka = current_amka; /* Move one level up the chain. */
         END WHILE;
     END IF;
 END$$
 
 CREATE TRIGGER trg_prescription_no_allergy_bi
 BEFORE INSERT ON prescription
-FOR EACH ROW /* Για πολλά perscriptions*/
+FOR EACH ROW
 BEGIN
-    IF EXISTS (  /*Αν query επιστρεψει αποτελέσματα τότε υπάρχει αλλεργία και απαγορεύεται η συνταγογράφηση*/
-        SELECT 1 /*Δεν χρειάζεται να επιλέξουμε συγκεκριμένα πεδία, αρκεί να επιστρέψουμε κάτι για να ξέρουμε ότι υπάρχει αποτέλεσμα*/
+    IF EXISTS (
+        SELECT 1
         FROM patient_allergy pa
-        JOIN drug_active_substance das /*Ενώνουμε τους πίνακες για να βρούμε αν υπάρχει κοινό στοιχείο μεταξύ των δραστικών ουσιών του φαρμάκου και των αλλεργιών του ασθενή*/
-          ON das.substance_id = pa.substance_id /*Ελέγχουμε αν ο ασθενής είναι αλλεργικός σε κάποια από τις δραστικές ουσίες του φαρμάκου που προσπαθούμε να συνταγογραφήσουμε*/
+        JOIN drug_active_substance das
+          ON das.substance_id = pa.substance_id
         WHERE pa.patient_amka = NEW.patient_amka
           AND das.drug_id = NEW.drug_id
     ) THEN
@@ -701,7 +917,7 @@ BEGIN
 END$$
 
 CREATE TRIGGER trg_prescription_no_allergy_bu
-BEFORE UPDATE ON prescription /* ακολουθάμε την ίδια λογικη και για το update */
+BEFORE UPDATE ON prescription
 FOR EACH ROW
 BEGIN
     IF EXISTS (
@@ -773,20 +989,20 @@ BEGIN
     END IF;
 END$$
 
-CREATE TRIGGER trg_procedure_participant_overlap_bi /* Για να ελέγξουμε αν το προσωπικό που προσπαθούμε να προσθέσουμε ως συμμετέχοντα σε μια διαδικασία συμμετέχει ήδη σε άλλη διαδικασία που επικαλύπτεται χρονικά με την τρέχουσα ή είναι επικεφαλής χειρουργός σε άλλη διαδικασία που επικαλύπτεται χρονικά με την τρέχουσα */
+CREATE TRIGGER trg_procedure_participant_overlap_bi
 BEFORE INSERT ON procedure_participant
 FOR EACH ROW
 BEGIN
-    DECLARE v_start DATETIME; /* Χρειαζόμαστε την ημερομηνία έναρξης */
-    DECLARE v_end DATETIME;   /* και λήξης της διαδικασίας για να ελέγξουμε τις επικαλύψεις */
+    DECLARE v_start DATETIME;
+    DECLARE v_end DATETIME;
 
-    SELECT start_ts, end_ts /* Επιλέγουμε την ημερομηνία έναρξης και λήξης της διαδικασίας στην οποία προσπαθούμε να προσθέσουμε συμμετέχοντα */
+    SELECT start_ts, end_ts
       INTO v_start, v_end
       FROM procedure_event
      WHERE procedure_event_id = NEW.procedure_event_id;
 
-    IF EXISTS (  /* Ελέγχουμε αν το προσωπικό που προσπαθούμε να προσθέσουμε συμμετέχει ήδη σε άλλη διαδικασία που επικαλύπτεται χρονικά με την τρέχουσα */
-        SELECT 1 /* Δεν χρειάζεται να επιλέξουμε συγκεκριμένα πεδία, αρκεί να επιστρέψουμε κάτι για να ξέρουμε ότι υπάρχει αποτέλεσμα */
+    IF EXISTS (
+        SELECT 1
         FROM procedure_participant pp
         JOIN procedure_event pe
           ON pe.procedure_event_id = pp.procedure_event_id
@@ -798,7 +1014,7 @@ BEGIN
             SET MESSAGE_TEXT = 'The same staff member cannot participate in overlapping procedures.';
     END IF;
 
-    IF EXISTS ( /* Ελέγχουμε αν το προσωπικό που προσπαθούμε να προσθέσουμε είναι επικεφαλής χειρουργός σε άλλη διαδικασία που επικαλύπτεται χρονικά με την τρέχουσα */
+    IF EXISTS (
         SELECT 1
         FROM procedure_event pe
         WHERE pe.chief_surgeon_amka = NEW.personnel_amka
@@ -810,7 +1026,7 @@ BEGIN
     END IF;
 END$$
 
-CREATE TRIGGER trg_procedure_place_type_bi /* Για να ελέγξουμε αν ο τύπος του χώρου που προσπαθούμε να ορίσουμε για μια διαδικασία ταιριάζει με τον απαιτούμενο τύπο χώρου της διαδικασίας */
+CREATE TRIGGER trg_procedure_place_type_bi
 BEFORE INSERT ON procedure_event
 FOR EACH ROW
 BEGIN
@@ -833,7 +1049,7 @@ BEGIN
     END IF;
 END$$
 
-CREATE TRIGGER trg_procedure_place_type_bu /* Για να ελέγξουμε αν ο τύπος του χώρου που προσπαθούμε να ορίσουμε για μια διαδικασία ταιριάζει με τον απαιτούμενο τύπο χώρου της διαδικασίας σε περίπτωση update */
+CREATE TRIGGER trg_procedure_place_type_bu
 BEFORE UPDATE ON procedure_event
 FOR EACH ROW
 BEGIN
@@ -856,7 +1072,7 @@ BEGIN
     END IF;
 END$$
 
-CREATE TRIGGER trg_procedure_participant_not_chief_bi /* Για να ελέγξουμε αν ο συμμετέχων που προσπαθούμε να προσθέσουμε είναι ο ίδιος με τον επικεφαλής χειρουργό της διαδικασίας, κάτι που απαγορεύεται */
+CREATE TRIGGER trg_procedure_participant_not_chief_bi
 BEFORE INSERT ON procedure_participant
 FOR EACH ROW
 BEGIN
@@ -871,7 +1087,7 @@ BEGIN
     END IF;
 END$$
 
-CREATE TRIGGER trg_procedure_participant_not_admin_bi /* Για να ελέγξουμε αν ο συμμετέχων που προσπαθούμε να προσθέσουμε είναι διοικητικό προσωπικό, κάτι που απαγορεύεται */
+CREATE TRIGGER trg_procedure_participant_not_admin_bi
 BEFORE INSERT ON procedure_participant
 FOR EACH ROW
 BEGIN
@@ -883,7 +1099,7 @@ BEGIN
     END IF;
 END$$
 
-CREATE TRIGGER trg_procedure_participant_not_admin_bu /* Για να ελέγξουμε αν ο συμμετέχων που προσπαθούμε να προσθέσουμε είναι διοικητικό προσωπικό σε περίπτωση update, κάτι που απαγορεύεται */
+CREATE TRIGGER trg_procedure_participant_not_admin_bu
 BEFORE UPDATE ON procedure_participant
 FOR EACH ROW
 BEGIN
@@ -1060,15 +1276,14 @@ BEGIN
     DECLARE prev_end_dt     DATETIME;
     DECLARE CONTINUE HANDLER FOR NOT FOUND SET old_date = NULL;
 
-    /*Στοιχεία νέας βάρδιας που πάει να εισαχθεί*/
+    /* Convert the new shift start to a full timestamp. */
     SELECT shift_date, start_time INTO new_date, new_start
     FROM department_shift
     WHERE shift_id = NEW.shift_id;
 
-    /*Μετατροπή της νέας βάρδιας σε πλήρες DATETIME*/
     SET new_start_dt = TIMESTAMP(new_date, new_start);
 
-    /*Βρίσκουμε τα στοιχεία της αμέσως προηγούμενης βάρδιας του ίδιου ατόμου*/
+    /* Find the immediately previous shift for the same staff member. */
     SELECT ds.shift_date, ds.end_time, ds.shift_type 
     INTO old_date, old_end, old_type
     FROM shift_assignment sa
@@ -1078,18 +1293,17 @@ BEGIN
     ORDER BY ds.shift_date DESC, ds.start_time DESC
     LIMIT 1;
 
-    /*Αν βρέθηκε προηγούμενη βάρδια*/
+    /* Compare rest time only when a previous shift exists. */
     IF old_date IS NOT NULL THEN
         
-        /*ΜΕτατροπή της λήξης προηγούμενης βάρδιας σε DATETIME*/
         SET prev_end_dt = TIMESTAMP(old_date, old_end);
 
-        /*Αν η προηγούμενη ήταν νυχτερινή η λήξη είναι μία μέρα μετά*/
+        /* Night shifts end on the following calendar day. */
         IF old_type = 'NIGHT' THEN
             SET prev_end_dt = DATE_ADD(prev_end_dt, INTERVAL 1 DAY);
         END IF;
 
-        /*Έλεγχος αν έχουν περάσει τουλάχιστον 8 ώρες*/
+        /* Staff must rest at least eight hours between shifts. */
         IF TIMESTAMPDIFF(HOUR, prev_end_dt, new_start_dt) < 8 THEN
             SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'Rest must be at least 8 hours between shifts.';
@@ -1113,15 +1327,14 @@ BEGIN
     DECLARE prev_end_dt     DATETIME;
     DECLARE CONTINUE HANDLER FOR NOT FOUND SET old_date = NULL;
 
-    /*Στοιχεία νέας βάρδιας που πάνε να εισαχθούν*/
+    /* Convert the updated shift start to a full timestamp. */
     SELECT shift_date, start_time INTO new_date, new_start
     FROM department_shift
     WHERE shift_id = NEW.shift_id;
 
-    /*Μετατροπή της νέας βάρδιας σε πλήρες DATETIME*/
     SET new_start_dt = TIMESTAMP(new_date, new_start);
 
-    /*Βρίσκουμε τα στοιχεία της αμέσως προηγούμενης βάρδιας του ίδιου ατόμου*/
+    /* Find the immediately previous shift for the same staff member. */
     SELECT ds.shift_date, ds.end_time, ds.shift_type 
     INTO old_date, old_end, old_type
     FROM shift_assignment sa
@@ -1132,18 +1345,17 @@ BEGIN
     ORDER BY ds.shift_date DESC, ds.start_time DESC
     LIMIT 1;
 
-    /*Αν βρέθηκε προηγούμενη βάρδια*/
+    /* Compare rest time only when a previous shift exists. */
     IF old_date IS NOT NULL THEN
         
-        /*Μετατροπή της λήξης προηγούμενης βάρδιας σε DATETIME*/
         SET prev_end_dt = TIMESTAMP(old_date, old_end);
 
-        /*Αν η προηγούμενη ήταν νυχτερινή η λήξη είναι μία μέρα μετά*/
+        /* Night shifts end on the following calendar day. */
         IF old_type = 'NIGHT' THEN
             SET prev_end_dt = DATE_ADD(prev_end_dt, INTERVAL 1 DAY);
         END IF;
 
-        /*Έλεγχος αν έχουν περάσει τουλάχιστον 8 ώρες*/
+        /* Staff must rest at least eight hours between shifts. */
         IF TIMESTAMPDIFF(HOUR, prev_end_dt, new_start_dt) < 8 THEN
             SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'Rest must be at least 8 hours between shifts.';
@@ -1273,6 +1485,447 @@ BEGIN
         END IF;
     END IF;
 
+END$$
+
+/* ---------------------------------------------------------------------------
+   Workflow stored procedures.
+   Procedures centralize common application actions. The existing constraints
+   and triggers still perform the final safety checks.
+--------------------------------------------------------------------------- */
+
+CREATE PROCEDURE sp_next_emergency_visit(IN p_department_id INT)
+BEGIN
+    SELECT *
+    FROM v_emergency_fifo_queue
+    WHERE p_department_id IS NULL
+       OR referred_department_id = p_department_id
+    ORDER BY emergency_level, arrival_ts, visit_id
+    LIMIT 1;
+END$$
+
+CREATE PROCEDURE sp_start_emergency_service(IN p_visit_id BIGINT)
+BEGIN
+    DECLARE v_exists INT DEFAULT 0;
+    DECLARE v_arrival DATETIME;
+    DECLARE v_service_start DATETIME;
+    DECLARE v_service_end DATETIME;
+
+    SELECT COUNT(*)
+      INTO v_exists
+      FROM emergency_visit
+     WHERE visit_id = p_visit_id;
+
+    IF v_exists = 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Emergency visit does not exist.';
+    END IF;
+
+    SELECT arrival_ts, service_start_ts, service_end_ts
+      INTO v_arrival, v_service_start, v_service_end
+      FROM emergency_visit
+     WHERE visit_id = p_visit_id;
+
+    IF v_service_end IS NOT NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Emergency visit is already finished.';
+    END IF;
+
+    IF v_service_start IS NOT NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Emergency service has already started.';
+    END IF;
+
+    UPDATE emergency_visit
+       SET service_start_ts = CASE
+             WHEN NOW() < v_arrival THEN v_arrival
+             ELSE NOW()
+           END
+     WHERE visit_id = p_visit_id;
+
+    SELECT *
+    FROM emergency_visit
+    WHERE visit_id = p_visit_id;
+END$$
+
+CREATE PROCEDURE sp_finish_emergency_service(
+    IN p_visit_id BIGINT,
+    IN p_disposition VARCHAR(20),
+    IN p_referred_department_id INT
+)
+BEGIN
+    DECLARE v_exists INT DEFAULT 0;
+    DECLARE v_arrival DATETIME;
+    DECLARE v_service_start DATETIME;
+    DECLARE v_service_end DATETIME;
+    DECLARE v_final_start DATETIME;
+    DECLARE v_final_end DATETIME;
+
+    SELECT COUNT(*)
+      INTO v_exists
+      FROM emergency_visit
+     WHERE visit_id = p_visit_id;
+
+    IF v_exists = 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Emergency visit does not exist.';
+    END IF;
+
+    IF p_disposition IS NULL OR p_disposition NOT IN ('DISCHARGED', 'HOSPITALIZED') THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Invalid emergency disposition.';
+    END IF;
+
+    IF p_disposition = 'HOSPITALIZED' AND p_referred_department_id IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Hospitalized emergency visits require a referred department.';
+    END IF;
+
+    SELECT arrival_ts, service_start_ts, service_end_ts
+      INTO v_arrival, v_service_start, v_service_end
+      FROM emergency_visit
+     WHERE visit_id = p_visit_id;
+
+    IF v_service_end IS NOT NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Emergency visit is already finished.';
+    END IF;
+
+    SET v_final_start = COALESCE(v_service_start, CASE WHEN NOW() < v_arrival THEN v_arrival ELSE NOW() END);
+    SET v_final_end = CASE WHEN NOW() < v_final_start THEN v_final_start ELSE NOW() END;
+
+    UPDATE emergency_visit
+       SET service_start_ts = v_final_start,
+           service_end_ts = v_final_end,
+           disposition = p_disposition,
+           referred_department_id = CASE
+             WHEN p_disposition = 'HOSPITALIZED' THEN p_referred_department_id
+             ELSE NULL
+           END
+     WHERE visit_id = p_visit_id;
+
+    SELECT *
+    FROM emergency_visit
+    WHERE visit_id = p_visit_id;
+END$$
+
+CREATE PROCEDURE sp_admit_patient(
+    IN p_patient_amka CHAR(11),
+    IN p_department_id INT,
+    IN p_emergency_visit_id BIGINT,
+    IN p_ken_code VARCHAR(20),
+    IN p_admission_icd10_code VARCHAR(20),
+    IN p_primary_doctor_amka CHAR(11),
+    IN p_admission_ts DATETIME
+)
+BEGIN
+    DECLARE v_bed_id INT DEFAULT NULL;
+    DECLARE v_hosp_id BIGINT;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_bed_id = NULL;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM doctor_department
+        WHERE doctor_amka = p_primary_doctor_amka
+          AND department_id = p_department_id
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Primary doctor is not assigned to the admission department.';
+    END IF;
+
+    SELECT b.bed_id
+      INTO v_bed_id
+      FROM bed b
+     WHERE b.department_id = p_department_id
+       AND b.bed_status = 'AVAILABLE'
+       AND NOT EXISTS (
+           SELECT 1
+           FROM hospitalization h
+           WHERE h.bed_id = b.bed_id
+             AND h.admission_ts <= p_admission_ts
+             AND (h.discharge_ts IS NULL OR h.discharge_ts > p_admission_ts)
+       )
+     ORDER BY FIELD(b.bed_type, 'MULTI_BED', 'SINGLE', 'ICU'), b.bed_number
+     LIMIT 1;
+
+    IF v_bed_id IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'No available bed found for this department.';
+    END IF;
+
+    INSERT INTO hospitalization (
+        patient_amka,
+        department_id,
+        bed_id,
+        emergency_visit_id,
+        ken_code,
+        admission_ts,
+        admission_icd10_code
+    ) VALUES (
+        p_patient_amka,
+        p_department_id,
+        v_bed_id,
+        p_emergency_visit_id,
+        p_ken_code,
+        p_admission_ts,
+        p_admission_icd10_code
+    );
+
+    SET v_hosp_id = LAST_INSERT_ID();
+
+    INSERT INTO hospitalization_doctor (hosp_id, doctor_amka, doctor_role, is_primary)
+    VALUES (v_hosp_id, p_primary_doctor_amka, 'PRIMARY', TRUE);
+
+    UPDATE bed
+       SET bed_status = 'OCCUPIED'
+     WHERE bed_id = v_bed_id;
+
+    SELECT *
+    FROM hospitalization
+    WHERE hosp_id = v_hosp_id;
+END$$
+
+CREATE PROCEDURE sp_discharge_patient(
+    IN p_hosp_id BIGINT,
+    IN p_discharge_ts DATETIME,
+    IN p_discharge_icd10_code VARCHAR(20)
+)
+BEGIN
+    DECLARE v_exists INT DEFAULT 0;
+    DECLARE v_bed_id INT;
+    DECLARE v_admission_ts DATETIME;
+    DECLARE v_discharge_ts DATETIME;
+
+    SELECT COUNT(*)
+      INTO v_exists
+      FROM hospitalization
+     WHERE hosp_id = p_hosp_id;
+
+    IF v_exists = 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Hospitalization does not exist.';
+    END IF;
+
+    SELECT bed_id, admission_ts
+      INTO v_bed_id, v_admission_ts
+      FROM hospitalization
+     WHERE hosp_id = p_hosp_id;
+
+    SET v_discharge_ts = COALESCE(p_discharge_ts, NOW());
+
+    IF v_discharge_ts < v_admission_ts THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Discharge timestamp cannot be before admission timestamp.';
+    END IF;
+
+    UPDATE hospitalization
+       SET discharge_ts = v_discharge_ts,
+           discharge_icd10_code = p_discharge_icd10_code
+     WHERE hosp_id = p_hosp_id;
+
+    UPDATE bed
+       SET bed_status = 'AVAILABLE'
+     WHERE bed_id = v_bed_id
+       AND NOT EXISTS (
+           SELECT 1
+           FROM hospitalization h
+           WHERE h.bed_id = v_bed_id
+             AND h.hosp_id <> p_hosp_id
+             AND h.admission_ts <= v_discharge_ts
+             AND (h.discharge_ts IS NULL OR h.discharge_ts > v_discharge_ts)
+       );
+
+    SELECT *
+    FROM hospitalization
+    WHERE hosp_id = p_hosp_id;
+END$$
+
+CREATE PROCEDURE sp_prescribe_drug_safely(
+    IN p_hosp_id BIGINT,
+    IN p_patient_amka CHAR(11),
+    IN p_doctor_amka CHAR(11),
+    IN p_drug_id VARCHAR(80),
+    IN p_dosage VARCHAR(120),
+    IN p_frequency VARCHAR(120),
+    IN p_start_datetime DATETIME,
+    IN p_end_datetime DATETIME
+)
+BEGIN
+    DECLARE v_prescription_id BIGINT;
+
+    IF EXISTS (
+        SELECT 1
+        FROM patient_allergy pa
+        JOIN drug_active_substance das ON das.substance_id = pa.substance_id
+        WHERE pa.patient_amka = p_patient_amka
+          AND das.drug_id = p_drug_id
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Prescription forbidden: patient is allergic to an active substance of this drug.';
+    END IF;
+
+    INSERT INTO prescription (
+        hosp_id,
+        patient_amka,
+        doctor_amka,
+        drug_id,
+        dosage,
+        frequency,
+        start_datetime,
+        end_datetime
+    ) VALUES (
+        p_hosp_id,
+        p_patient_amka,
+        p_doctor_amka,
+        p_drug_id,
+        p_dosage,
+        p_frequency,
+        p_start_datetime,
+        p_end_datetime
+    );
+
+    SET v_prescription_id = LAST_INSERT_ID();
+
+    SELECT *
+    FROM prescription
+    WHERE prescription_id = v_prescription_id;
+END$$
+
+CREATE PROCEDURE sp_schedule_procedure(
+    IN p_hosp_id BIGINT,
+    IN p_procedure_code VARCHAR(30),
+    IN p_place_id INT,
+    IN p_chief_surgeon_amka CHAR(11),
+    IN p_start_ts DATETIME,
+    IN p_end_ts DATETIME
+)
+BEGIN
+    DECLARE v_procedure_event_id BIGINT;
+
+    INSERT INTO procedure_event (
+        hosp_id,
+        procedure_code,
+        place_id,
+        chief_surgeon_amka,
+        start_ts,
+        end_ts,
+        actual_duration_min
+    ) VALUES (
+        p_hosp_id,
+        p_procedure_code,
+        p_place_id,
+        p_chief_surgeon_amka,
+        p_start_ts,
+        p_end_ts,
+        TIMESTAMPDIFF(MINUTE, p_start_ts, p_end_ts)
+    );
+
+    SET v_procedure_event_id = LAST_INSERT_ID();
+
+    SELECT *
+    FROM procedure_event
+    WHERE procedure_event_id = v_procedure_event_id;
+END$$
+
+CREATE PROCEDURE sp_add_procedure_participant(
+    IN p_procedure_event_id BIGINT,
+    IN p_personnel_amka CHAR(11),
+    IN p_participant_role VARCHAR(40)
+)
+BEGIN
+    INSERT INTO procedure_participant (procedure_event_id, personnel_amka, participant_role)
+    VALUES (p_procedure_event_id, p_personnel_amka, p_participant_role);
+
+    SELECT *
+    FROM procedure_participant
+    WHERE procedure_event_id = p_procedure_event_id
+      AND personnel_amka = p_personnel_amka;
+END$$
+
+CREATE PROCEDURE sp_assign_staff_to_shift(
+    IN p_shift_id BIGINT,
+    IN p_personnel_amka CHAR(11),
+    IN p_assigned_role VARCHAR(40)
+)
+BEGIN
+    INSERT INTO shift_assignment (shift_id, personnel_amka, assigned_role)
+    VALUES (p_shift_id, p_personnel_amka, p_assigned_role);
+
+    SELECT *
+    FROM shift_assignment
+    WHERE shift_id = p_shift_id
+      AND personnel_amka = p_personnel_amka;
+END$$
+
+CREATE PROCEDURE sp_record_evaluation(
+    IN p_hosp_id BIGINT,
+    IN p_evaluation_date DATE,
+    IN p_medical_care_score INT,
+    IN p_nursing_care_score INT,
+    IN p_cleanliness_score INT,
+    IN p_food_score INT,
+    IN p_overall_experience_score INT,
+    IN p_comments TEXT
+)
+BEGIN
+    DECLARE v_discharge_ts DATETIME;
+    DECLARE v_exists INT DEFAULT 0;
+
+    SELECT COUNT(*)
+      INTO v_exists
+      FROM hospitalization
+     WHERE hosp_id = p_hosp_id;
+
+    IF v_exists = 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Hospitalization does not exist.';
+    END IF;
+
+    SELECT discharge_ts
+      INTO v_discharge_ts
+      FROM hospitalization
+     WHERE hosp_id = p_hosp_id;
+
+    IF v_discharge_ts IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Evaluation can be recorded only after discharge.';
+    END IF;
+
+    IF p_evaluation_date < DATE(v_discharge_ts) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Evaluation date cannot be before discharge date.';
+    END IF;
+
+    INSERT INTO hospitalization_evaluation (
+        hosp_id,
+        evaluation_date,
+        medical_care_score,
+        nursing_care_score,
+        cleanliness_score,
+        food_score,
+        overall_experience_score,
+        comments
+    ) VALUES (
+        p_hosp_id,
+        p_evaluation_date,
+        p_medical_care_score,
+        p_nursing_care_score,
+        p_cleanliness_score,
+        p_food_score,
+        p_overall_experience_score,
+        p_comments
+    )
+    ON DUPLICATE KEY UPDATE
+        evaluation_date = VALUES(evaluation_date),
+        medical_care_score = VALUES(medical_care_score),
+        nursing_care_score = VALUES(nursing_care_score),
+        cleanliness_score = VALUES(cleanliness_score),
+        food_score = VALUES(food_score),
+        overall_experience_score = VALUES(overall_experience_score),
+        comments = VALUES(comments);
+
+    SELECT *
+    FROM hospitalization_evaluation
+    WHERE hosp_id = p_hosp_id;
 END$$
 
 DELIMITER ;

@@ -1,6 +1,6 @@
 # Data Generator Guide
 
-`generate_data.py` creates reference and synthetic CSV data for the hospital database.
+`generate_data.py` creates reference and synthetic CSV data for the Ygeiopolis hospital database.
 
 ## What It Does
 
@@ -44,3 +44,7 @@ The output bundle contains:
 - KEN data is currently synthetic fallback data unless replaced with an official source.
 - Drug/substance data can use EMA Article 57 if provided; otherwise the script creates demo drug data so allergy and prescription logic can still be tested.
 - The generated data is deterministic, so the same inputs and seed should produce the same result.
+
+## Recommended Use
+
+Use the generator for repeatable testing and demonstration. For final submission, keep a short note explaining which CSV files came from official sources and which were generated synthetically.

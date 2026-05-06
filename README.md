@@ -1,10 +1,10 @@
 # Ygeiopolis Healthcare System
 
-Database project for a hospital information system. The project models the main entities of a healthcare organization: personnel, departments, beds, shifts, patients, emergency visits, hospitalizations, diagnoses, procedures, lab tests, prescriptions, allergies, evaluations, and supporting image metadata.
+Ygeiopolis is a relational database project for a hospital information system. It models the operational and clinical data of a healthcare organization, including personnel, departments, beds, shifts, patients, emergency visits, hospitalizations, diagnoses, procedures, lab tests, prescriptions, allergies, evaluations, and image metadata.
 
-The design goal is to show a complete relational model, not only isolated tables. The schema uses primary keys, foreign keys, uniqueness rules, check constraints, indexes, and triggers so the database protects important business logic itself.
+The project is designed as a complete database deliverable. The schema uses primary keys, foreign keys, unique constraints, check constraints, indexes, triggers, reporting views, and stored procedures so the database protects important business rules directly.
 
-## Project Structure
+## Repository Structure
 
 ```text
 .
@@ -28,7 +28,7 @@ The design goal is to show a complete relational model, not only isolated tables
 
 ## Main Logic
 
-The database is organized around six areas:
+The database is organized around six functional areas:
 
 1. **Hospital organization**: `department`, `bed`, `operating_place`.
 2. **Personnel**: `personnel` is the parent table; `doctor`, `nurse`, and `administrative_staff` specialize it.
@@ -37,7 +37,7 @@ The database is organized around six areas:
 5. **Clinical work**: `icd10_diagnosis`, `ken`, `icd10_ken_map`, `lab_test`, `procedure_event`, `procedure_participant`, and `prescription`.
 6. **Quality/support data**: `hospitalization_evaluation`, `image_asset`, and `entity_image`.
 
-Important rules are enforced in SQL:
+Important rules are enforced inside SQL:
 
 - doctors cannot supervise themselves or form supervision cycles;
 - resident doctors must have appropriate supervision;
@@ -45,8 +45,14 @@ Important rules are enforced in SQL:
 - procedures cannot overlap in the same operating/procedure room;
 - staff cannot be assigned to overlapping procedure participation;
 - administrative staff cannot participate in medical procedures;
-- shift limits, rest-time rules, and night-shift limits are checked;
+- shift limits, rest-time rules, and night-shift limits are enforced;
 - hospitalization cost is calculated from KEN cost rules.
+
+The schema also includes workflow objects:
+
+- FIFO-style emergency queue view and procedures;
+- reporting views for beds, occupancy, active admissions, patient history, doctor workload, prescriptions, and shift rosters;
+- stored procedures for admission, discharge, prescription, procedure scheduling, shift assignment, and post-discharge evaluation.
 
 ## How To Run
 
@@ -69,15 +75,15 @@ python3 scripts/generate_data.py --source-dir . --output-dir hospital_dataset_bu
 mysql --local-infile=1 -u root -p < hospital_dataset_bundle/sql/load.sql
 ```
 
-The generator expects the official ICD-10/procedure source workbooks to be available in the source directory. If they are not included, keep using the existing generated CSV bundle referenced by the Workbench loader.
+The generator expects the official ICD-10 and procedure source workbooks to be available in the source directory. If they are not included, keep using the generated CSV bundle referenced by the Workbench loader.
 
 ## Documentation
 
 - [SQL README](sql/README.md) explains the schema and load scripts.
 - [Generator README](scripts/README.md) explains the Python data pipeline.
 - [Project Review](docs/PROJECT_REVIEW.md) lists what was fixed and what is still missing.
-- [Improvements](docs/IMPROVEMENTS.md) proposes FIFO, views, stored procedures, validation, and optimization additions.
+- [Improvements](docs/IMPROVEMENTS.md) tracks completed and remaining improvements.
 
 ## Current Status
 
-The project now has a clean structure and the main schema has been aligned with the generated data/load script. The biggest remaining improvement is to add a final `sql/queries.sql` file with the required exercise queries and a reproducible `data/` bundle or clear source-data instructions.
+The project now has a clean structure, aligned schema/load scripts, business-rule triggers, workflow procedures, and reusable reporting views. The biggest remaining improvement is to add a final `sql/queries.sql` file with the required exercise queries and either a reproducible `data/` bundle or clear source-data instructions.
