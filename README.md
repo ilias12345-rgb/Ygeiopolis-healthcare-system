@@ -22,6 +22,7 @@ The project is designed as a complete database deliverable. The schema uses prim
 │   ├── schema.sql
 │   ├── validation.sql
 │   ├── load_workbench_absolute.sql
+│   ├── setup_workbench_absolute.sql
 │   └── README.md
 └── README.md
 ```
@@ -62,20 +63,21 @@ Create the database schema:
 mysql -u root -p < sql/schema.sql
 ```
 
-If you already have the generated CSV files at the absolute paths used during the exercise, load them in MySQL Workbench with:
+If you are using the local exercise folder, rebuild the schema, load the absolute-path CSV bundle, and run validation by opening this file in MySQL Workbench and executing it:
 
-```sql
-SOURCE sql/load_workbench_absolute.sql;
+```text
+/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/Ygeiopolis-healthcare-system/sql/setup_workbench_absolute.sql
 ```
 
-For a reproducible run, generate a fresh data bundle:
+To regenerate the local final-data bundle first:
 
 ```bash
-python3 scripts/generate_data.py --source-dir . --output-dir hospital_dataset_bundle
-mysql --local-infile=1 -u root -p < hospital_dataset_bundle/sql/load.sql
+python3 scripts/generate_data.py \
+  --source-dir /Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/εργασια/data \
+  --output-dir /Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data
 ```
 
-The generator expects the official ICD-10 and procedure source workbooks to be available in the source directory. If they are not included, keep using the generated CSV bundle referenced by the Workbench loader.
+The generator now keeps clinical references synchronized: hospitalization KEN codes come from the active `ken.csv`, the ICD10-KEN map is filtered against that same KEN table, procedure events use valid procedure/place-type pairs, and drug/allergy/prescription rows use valid drug-substance references.
 
 ## Documentation
 
@@ -86,4 +88,4 @@ The generator expects the official ICD-10 and procedure source workbooks to be a
 
 ## Current Status
 
-The project now has a clean structure, aligned schema/load scripts, business-rule triggers, workflow procedures, and reusable reporting views. The biggest remaining improvement is to add a final `sql/queries.sql` file with the required exercise queries and either a reproducible `data/` bundle or clear source-data instructions.
+The project now has a clean structure, aligned schema/load scripts, synchronized generated data, business-rule triggers, workflow procedures, and reusable reporting views. The biggest remaining improvement is to add a final `sql/queries.sql` file with the required exercise queries.

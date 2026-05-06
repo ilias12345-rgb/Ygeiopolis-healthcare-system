@@ -39,9 +39,20 @@ Implemented in `sql/schema.sql`.
 - `sp_assign_staff_to_shift`: assigns staff to a shift while existing triggers enforce shift rules.
 - `sp_record_evaluation`: records or updates a post-discharge hospitalization evaluation.
 
+### 4. Synchronized Data Generation
+
+Implemented in `scripts/generate_data.py` and `sql/load_workbench_absolute.sql`.
+
+- KEN rows are loaded from the improved/official `ken.csv` when available; demo `DKEN...` values are used only as a last-resort fallback.
+- `icd10_ken_map.csv` is filtered or rebuilt so every mapped KEN code exists in `ken.csv`.
+- Hospitalizations are generated only from valid ICD-10 and KEN references.
+- Procedure events use `procedure_code` values from `procedure_catalog.csv` and choose rooms with a matching required place type.
+- Drug, active-substance, allergy, and prescription rows are validated against their reference CSVs before the bundle is accepted.
+- The Workbench absolute loader points to the regenerated `rdbms_final_data` bundle.
+
 ## Remaining
 
-### 4. Validation Scripts
+### 5. Validation Scripts
 
 Extend `sql/validation.sql` with:
 
@@ -52,7 +63,7 @@ Extend `sql/validation.sql` with:
 - emergency visits with inconsistent timestamps;
 - negative trigger tests that intentionally attempt invalid inserts and confirm they fail.
 
-### 5. Query File
+### 6. Query File
 
 Add `sql/queries.sql` containing the final exercise answers. Keep each query labelled:
 
@@ -61,6 +72,6 @@ Add `sql/queries.sql` containing the final exercise answers. Keep each query lab
 SELECT ...
 ```
 
-### 6. Optimization
+### 7. Optimization
 
 After `sql/queries.sql` exists, run `EXPLAIN` on each final query. Keep the indexes that support the final workload and remove speculative indexes that do not help.

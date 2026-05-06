@@ -86,6 +86,29 @@ DEMO_DRUGS = [
     ("DEMO0020", "Ondansetron 8mg tablet", ["ONDANSETRON"]),
 ]
 
+DEMO_KEN_ROWS = [
+    ("DKEN001", "Demo cardiology short stay", 1200.00, 3),
+    ("DKEN002", "Demo cardiology complex stay", 4200.00, 8),
+    ("DKEN003", "Demo general surgery simple procedure", 1800.00, 4),
+    ("DKEN004", "Demo general surgery complex procedure", 6200.00, 10),
+    ("DKEN005", "Demo ICU respiratory support", 8500.00, 12),
+    ("DKEN006", "Demo neurology admission", 2300.00, 6),
+    ("DKEN007", "Demo orthopedic admission", 3100.00, 7),
+    ("DKEN008", "Demo pulmonary infection", 1600.00, 5),
+    ("DKEN009", "Demo gastroenterology admission", 1400.00, 4),
+    ("DKEN010", "Demo oncology admission", 3600.00, 9),
+    ("DKEN011", "Demo pediatrics admission", 900.00, 3),
+    ("DKEN012", "Demo ophthalmology procedure", 1000.00, 2),
+    ("DKEN013", "Demo ENT admission", 950.00, 3),
+    ("DKEN014", "Demo nephrology admission", 2800.00, 7),
+    ("DKEN015", "Demo psychiatry admission", 1700.00, 8),
+    ("DKEN016", "Demo internal medicine admission", 1500.00, 5),
+    ("DKEN017", "Demo emergency observation", 600.00, 1),
+    ("DKEN018", "Demo high cost transplant-like case", 18000.00, 20),
+    ("DKEN019", "Demo diagnostic same-day case", 450.00, 1),
+    ("DKEN020", "Demo therapeutic intervention", 2500.00, 6),
+]
+
 COMMON_SUBSTANCE_PAIRS = [
     ("PARACETAMOL", "ONDANSETRON"),
     ("AMOXICILLIN", "OMEPRAZOLE"),
@@ -119,6 +142,8 @@ def normalize_space(s):
 
 
 def parse_money_eur(s):
+    if isinstance(s, (int, float, np.integer, np.floating)) and not pd.isna(s):
+        return float(s)
     s = normalize_space(s)
     if not s:
         return None
@@ -284,54 +309,138 @@ def read_excel_flexible(path: Path, **kwargs):
     return pd.read_excel(path, engine=engine, **kwargs)
 
 
-def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | None = None, allow_demo_drugs: bool = True):
-    """Load official reference sources and write normalized reference CSVs."""
+def normalize_ken_dataframe(raw: pd.DataFrame) -> pd.DataFrame:
+    """Normalize official or fallback KEN exports to the schema column order."""
 
-    out_ref_dir.mkdir(parents=True, exist_ok=True)
+    df = raw.copy()
+    normalized_columns = {str(c).strip().lower(): c for c in df.columns}
+    if "ken_code" in normalized_columns:
+        rename = {
+            normalized_columns["ken_code"]: "ken_code",
+            normalized_columns.get("ken_description", "ken_description"): "ken_description",
+            normalized_columns.get("basic_cost", "basic_cost"): "basic_cost",
+            normalized_columns.get("mean_duration_days", "mean_duration_days"): "mean_duration_days",
+            normalized_columns.get("extra_daily_cost", "extra_daily_cost"): "extra_daily_cost",
+        }
+        df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
+    else:
+        cols = list(df.columns)
+        rename = {
+            cols[0]: "ken_code",
+            cols[1]: "ken_description",
+            cols[2]: "basic_cost",
+            cols[3]: "mean_duration_days",
+        }
+        if len(cols) > 4:
+            rename[cols[4]] = "extra_daily_cost"
+        df = df.rename(columns=rename)
 
-    # ICD-10
-    icd_path = resolve_source_file(source_dir, [
-        "4.2 Κωδικοί ICD-10 15-12-2011 (2).xlsx",
-        "4.2 Κωδικοί ICD-10 15-12-2011 (2).xls",
-        "4.2 Κωδικοί ICD-10 15-12-2011 (2).xlsx",
-        "4.2 Κωδικοί ICD-10 15-12-2011 (2).xls",
-    ])
-    icd_raw = read_excel_flexible(icd_path, sheet_name=0, header=None, names=["icd10_code", "icd10_description"])
-    icd = icd_raw.copy()
-    icd["icd10_code"] = icd["icd10_code"].map(normalize_space).str.upper()
-    icd["icd10_description"] = icd["icd10_description"].map(normalize_space)
-    icd = icd[icd["icd10_code"].notna() & icd["icd10_description"].notna()].drop_duplicates().reset_index(drop=True)
-    icd.to_csv(out_ref_dir / "icd10_diagnosis.csv", index=False)
+    required = ["ken_code", "ken_description", "basic_cost", "mean_duration_days"]
+    df = df[[c for c in required + ["extra_daily_cost"] if c in df.columns]].copy()
+    df["ken_code"] = df["ken_code"].map(normalize_space).str.upper()
+    df["ken_description"] = df["ken_description"].map(normalize_space)
+    df["basic_cost"] = pd.to_numeric(df["basic_cost"].map(parse_money_eur), errors="coerce")
+    df["mean_duration_days"] = pd.to_numeric(df["mean_duration_days"], errors="coerce")
+    df = df[
+        df["ken_code"].notna()
+        & df["ken_description"].notna()
+        & df["basic_cost"].notna()
+        & df["mean_duration_days"].notna()
+    ].copy()
+    df = df[~df["ken_code"].str.lower().eq("ken_code")]
+    df = df[df["ken_code"].str.match(r"^[A-ZΑ-Ω][A-ZΑ-Ω0-9-]{1,12}$", na=False)]
+    df["basic_cost"] = df["basic_cost"].round(2)
+    df["mean_duration_days"] = df["mean_duration_days"].astype(int).clip(lower=1)
+    if "extra_daily_cost" in df.columns:
+        df["extra_daily_cost"] = pd.to_numeric(df["extra_daily_cost"].map(parse_money_eur), errors="coerce")
+    else:
+        df["extra_daily_cost"] = np.nan
+    missing_extra = df["extra_daily_cost"].isna()
+    df.loc[missing_extra, "extra_daily_cost"] = (
+        df.loc[missing_extra, "basic_cost"] / df.loc[missing_extra, "mean_duration_days"]
+    ).round(2)
+    return df[["ken_code", "ken_description", "basic_cost", "mean_duration_days", "extra_daily_cost"]].drop_duplicates("ken_code").reset_index(drop=True)
 
-    # KEN intentionally skipped: generated fallback only.
-    # The official KEN .doc source is ignored in this version.
-    demo_ken_rows = [
-        ("DKEN001", "Demo cardiology short stay", 1200.00, 3),
-        ("DKEN002", "Demo cardiology complex stay", 4200.00, 8),
-        ("DKEN003", "Demo general surgery simple procedure", 1800.00, 4),
-        ("DKEN004", "Demo general surgery complex procedure", 6200.00, 10),
-        ("DKEN005", "Demo ICU respiratory support", 8500.00, 12),
-        ("DKEN006", "Demo neurology admission", 2300.00, 6),
-        ("DKEN007", "Demo orthopedic admission", 3100.00, 7),
-        ("DKEN008", "Demo pulmonary infection", 1600.00, 5),
-        ("DKEN009", "Demo gastroenterology admission", 1400.00, 4),
-        ("DKEN010", "Demo oncology admission", 3600.00, 9),
-        ("DKEN011", "Demo pediatrics admission", 900.00, 3),
-        ("DKEN012", "Demo ophthalmology procedure", 1000.00, 2),
-        ("DKEN013", "Demo ENT admission", 950.00, 3),
-        ("DKEN014", "Demo nephrology admission", 2800.00, 7),
-        ("DKEN015", "Demo psychiatry admission", 1700.00, 8),
-        ("DKEN016", "Demo internal medicine admission", 1500.00, 5),
-        ("DKEN017", "Demo emergency observation", 600.00, 1),
-        ("DKEN018", "Demo high cost transplant-like case", 18000.00, 20),
-        ("DKEN019", "Demo diagnostic same-day case", 450.00, 1),
-        ("DKEN020", "Demo therapeutic intervention", 2500.00, 6),
+
+def is_demo_ken(df: pd.DataFrame) -> bool:
+    return not df.empty and df["ken_code"].astype(str).str.startswith("DKEN").all()
+
+
+def parse_ken_from_docx(document) -> pd.DataFrame:
+    rows = []
+    for table in document.tables:
+        for row in table.rows:
+            cells = [normalize_space(cell.text) for cell in row.cells]
+            cells = [cell for cell in cells if cell]
+            if len(cells) < 4:
+                continue
+            code = cells[0]
+            if not re.match(r"^[A-ZΑ-Ω][A-ZΑ-Ω0-9-]{1,12}$", code or ""):
+                continue
+            numeric_cells = [cell for cell in cells if parse_money_eur(cell) is not None]
+            day_cells = [cell for cell in cells if re.fullmatch(r"\d+", str(cell))]
+            if not numeric_cells or not day_cells:
+                continue
+            rows.append((code, cells[1], parse_money_eur(numeric_cells[0]), int(day_cells[-1])))
+    return normalize_ken_dataframe(pd.DataFrame(rows, columns=["ken_code", "ken_description", "basic_cost", "mean_duration_days"]))
+
+
+def load_ken_reference(source_dir: Path, out_ref_dir: Path):
+    """Prefer improved official KEN CSVs, then parse Word sources, then use demo fallback."""
+
+    csv_candidates = [
+        out_ref_dir / "ken.csv",
+        source_dir / "data" / "reference" / "ken.csv",
+        source_dir / "reference" / "ken.csv",
     ]
-    ken = pd.DataFrame(demo_ken_rows, columns=["ken_code", "ken_description", "basic_cost", "mean_duration_days"])
-    ken["extra_daily_cost"] = (ken["basic_cost"] / ken["mean_duration_days"].replace(0, 1)).round(2)
-    ken.to_csv(out_ref_dir / "ken.csv", index=False)
+    if source_dir.exists():
+        csv_candidates.extend(source_dir.rglob("ken.csv"))
 
-    # ICD-10 ↔ KEN mapping intentionally generated for synthetic data only.
+    official_ken = []
+    fallback_ken = []
+    seen = set()
+    for csv_path in csv_candidates:
+        if not csv_path.exists() or csv_path in seen:
+            continue
+        seen.add(csv_path)
+        try:
+            candidate = normalize_ken_dataframe(pd.read_csv(csv_path, header=None))
+        except Exception:
+            try:
+                candidate = normalize_ken_dataframe(pd.read_csv(csv_path))
+            except Exception:
+                continue
+        if candidate.empty:
+            continue
+        if is_demo_ken(candidate):
+            fallback_ken.append(candidate)
+        else:
+            official_ken.append(candidate)
+    if official_ken:
+        return max(official_ken, key=len), "official_csv"
+
+    try:
+        ken_path = resolve_source_file(source_dir, [
+            "4.1 Λίστα Κλειστών Ενοποιημένων Νοσηλίων (2).docx",
+            "4.1 Λίστα Κλειστών Ενοποιημένων Νοσηλίων (2).doc",
+            "4.1 Λίστα Κλειστών Ενοποιημένων Νοσηλίων (3).docx",
+            "4.1 Λίστα Κλειστών Ενοποιημένων Νοσηλίων (3).doc",
+        ])
+        source, kind = read_word_table_or_text(ken_path)
+        ken = parse_ken_from_docx(source) if kind == "docx" else normalize_ken_dataframe(parse_ken_from_text(source))
+        if not ken.empty and not is_demo_ken(ken):
+            return ken, "official_word"
+    except Exception:
+        pass
+
+    if fallback_ken:
+        return max(fallback_ken, key=len), "demo_existing"
+
+    ken = normalize_ken_dataframe(pd.DataFrame(DEMO_KEN_ROWS, columns=["ken_code", "ken_description", "basic_cost", "mean_duration_days"]))
+    return ken, "demo_generated"
+
+
+def build_generated_icd10_ken_map(icd: pd.DataFrame, ken: pd.DataFrame) -> pd.DataFrame:
     icd_prefixes = (
         icd["icd10_code"]
         .astype(str)
@@ -356,10 +465,74 @@ def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | No
     ordered_prefixes = [pfx for pfx in preferred_prefixes if pfx in available]
     ordered_prefixes += [pfx for pfx in icd_prefixes if pfx not in set(ordered_prefixes)]
     ken_codes = ken["ken_code"].tolist()
-    icd_ken = pd.DataFrame([
+    return pd.DataFrame([
         {"mdc_code": str((i % 25) + 1), "ken_code": ken_codes[i % len(ken_codes)], "icd10_code_prefix": pfx}
         for i, pfx in enumerate(ordered_prefixes)
     ])
+
+
+def load_icd10_ken_map(source_dir: Path, icd: pd.DataFrame, ken: pd.DataFrame):
+    """Use the official ICD10-KEN map when it is compatible with the active KEN table."""
+
+    ken_codes = set(ken["ken_code"])
+    icd_prefixes = set(
+        icd["icd10_code"]
+        .astype(str)
+        .str.replace(".", "", regex=False)
+        .str.extract(r"^([A-ZΑ-Ω]\d{2})")[0]
+        .dropna()
+    )
+    try:
+        map_path = resolve_source_file(source_dir, [
+            "4.4 Λίστα Αντιστοιχήσεων ICD 10 - KEN (1).xlsx",
+            "4.4 Λίστα Αντιστοιχήσεων ICD 10 - KEN (1).xls",
+        ])
+        raw = read_excel_flexible(map_path, sheet_name=0, header=0)
+        if raw.shape[1] >= 3:
+            official = pd.DataFrame({
+                "mdc_code": raw.iloc[:, 0].map(lambda v: f"{int(v):02d}" if pd.notna(v) and str(v).replace(".", "", 1).isdigit() else normalize_space(v)),
+                "ken_code": raw.iloc[:, 1].map(normalize_space).str.upper(),
+                "icd10_code_prefix": raw.iloc[:, 2].map(normalize_space).str.upper().str.replace(".", "", regex=False),
+            })
+            official = official[
+                official["ken_code"].isin(ken_codes)
+                & official["icd10_code_prefix"].isin(icd_prefixes)
+            ].drop_duplicates(["ken_code", "icd10_code_prefix"]).reset_index(drop=True)
+            if not official.empty:
+                return official, "official"
+    except Exception:
+        pass
+
+    return build_generated_icd10_ken_map(icd, ken), "generated_compatible"
+
+
+def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | None = None, allow_demo_drugs: bool = True):
+    """Load official reference sources and write normalized reference CSVs."""
+
+    out_ref_dir.mkdir(parents=True, exist_ok=True)
+
+    # ICD-10
+    icd_path = resolve_source_file(source_dir, [
+        "4.2 Κωδικοί ICD-10 15-12-2011 (2).xlsx",
+        "4.2 Κωδικοί ICD-10 15-12-2011 (2).xls",
+        "4.2 Κωδικοί ICD-10 15-12-2011 (2).xlsx",
+        "4.2 Κωδικοί ICD-10 15-12-2011 (2).xls",
+    ])
+    icd_raw = read_excel_flexible(icd_path, sheet_name=0, header=None, names=["icd10_code", "icd10_description"])
+    icd = icd_raw.copy()
+    icd["icd10_code"] = icd["icd10_code"].map(normalize_space).str.upper()
+    icd["icd10_description"] = icd["icd10_description"].map(normalize_space)
+    icd = icd[icd["icd10_code"].notna() & icd["icd10_description"].notna()].drop_duplicates().reset_index(drop=True)
+    icd.to_csv(out_ref_dir / "icd10_diagnosis.csv", index=False)
+
+    # KEN: prefer the improved official CSV that may already exist in the
+    # output bundle, then official Word sources, and only then demo fallback.
+    ken, ken_mode = load_ken_reference(source_dir, out_ref_dir)
+    ken.to_csv(out_ref_dir / "ken.csv", index=False)
+
+    # ICD-10 ↔ KEN: official mapping is used only after filtering it against
+    # the exact KEN table being written, so hospitalizations cannot drift.
+    icd_ken, icd_ken_mode = load_icd10_ken_map(source_dir, icd, ken)
     icd_ken.to_csv(out_ref_dir / "icd10_ken_map.csv", index=False)
 
     # Procedure catalog
@@ -387,7 +560,9 @@ def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | No
 
     meta = {
         "seed": SEED,
-        "note": "ICD-10 and procedure references are cleaned from uploaded files. KEN is intentionally synthetic/fallback only in this version.",
+        "note": "ICD-10, KEN, ICD10-KEN, and procedure references are cleaned from the best available official/improved sources. Demo KEN is used only when no official KEN data exists.",
+        "ken_mode": ken_mode,
+        "icd10_ken_mode": icd_ken_mode,
         "ema_mode": None,
     }
 
@@ -857,7 +1032,11 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
     for row in icd_df.itertuples(index=False):
         prefix_to_codes[row.prefix3].append(row.icd10_code)
 
+    valid_ken_codes = set(ref["ken"]["ken_code"])
     map_df = ref["icd10_ken"]
+    map_df = map_df[map_df["ken_code"].isin(valid_ken_codes)].copy()
+    if map_df.empty:
+        raise ValueError("ICD10-KEN map has no rows compatible with ken.csv.")
     prefix_to_kens = defaultdict(list)
     for row in map_df.itertuples(index=False):
         prefix_to_kens[row.icd10_code_prefix].append(row.ken_code)
@@ -937,9 +1116,16 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
         return actual_days, total_cost
 
     ken_row_lookup = {r.ken_code: r for r in ref["ken"].itertuples(index=False)}
-    proc_cat = ref["procedure_catalog"]
+    proc_cat = ref["procedure_catalog"].drop_duplicates("procedure_code")
+    proc_place_type = dict(proc_cat[["procedure_code", "required_place_type"]].itertuples(index=False, name=None))
     surg_proc = proc_cat[proc_cat["procedure_category"] == "SURGICAL"]["procedure_code"].tolist()
     diag_proc = proc_cat[proc_cat["procedure_category"] == "DIAGNOSTIC"]["procedure_code"].tolist()
+    if not surg_proc and not diag_proc:
+        raise ValueError("procedure_catalog.csv has no usable procedure codes.")
+    if not surg_proc:
+        surg_proc = diag_proc
+    if not diag_proc:
+        diag_proc = surg_proc
     lab_cat = ref["lab_test_catalog"]
 
     # --- hospitalizations: targeted first ---
@@ -1081,8 +1267,10 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
     surgical_hosps = hosp_df.sample(n=180, random_state=SEED)
     for row in surgical_hosps.itertuples(index=False):
         proc_code = pick(surg_proc if random.random() < 0.82 else diag_proc)
-        place_type = proc_cat.loc[proc_cat["procedure_code"] == proc_code, "required_place_type"].iloc[0]
+        place_type = proc_place_type[proc_code]
         place_ids = org["operating_place"].loc[org["operating_place"]["place_type"] == place_type, "place_id"].tolist()
+        if not place_ids:
+            continue
         chief = random.choice(weighted_surgeons if random.random() < 0.65 else surgeon_candidates["amka"].tolist())
         start_window = datetime.fromisoformat(row.admission_ts) + timedelta(hours=8)
         end_window = datetime.fromisoformat(row.discharge_ts) - timedelta(hours=6)
@@ -1146,6 +1334,8 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
     # Allergies
     substances = ref["active_substance"].copy()
     substance_ids = list(substances["substance_id"])
+    if not substance_ids:
+        raise ValueError("active_substance.csv is empty; cannot create patient allergies safely.")
     common_substance_ids = {s: int(substances.loc[substances["substance_name"] == s, "substance_id"].iloc[0]) for pair in COMMON_SUBSTANCE_PAIRS for s in pair if s in set(substances["substance_name"])}
     allergy_patients = random.sample(patient_ids, 70)
     for p in allergy_patients:
@@ -1160,6 +1350,8 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
     # Prescriptions (query-driven for Q10)
     drug_df = ref["drug"].copy()
     das = ref["drug_active_substance"].copy()
+    if drug_df.empty or das.empty:
+        raise ValueError("Drug reference tables are empty; cannot create prescriptions safely.")
     sub_name = dict(ref["active_substance"][["substance_id","substance_name"]].itertuples(index=False, name=None))
     drug_to_subs = defaultdict(set)
     for r in das.itertuples(index=False):
@@ -1229,7 +1421,46 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
             "end_datetime": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
         })
         prescription_id += 1
-    presc_df = pd.DataFrame(prescription_rows).drop_duplicates(subset=["doctor_amka","patient_amka","drug_id","start_datetime"])
+    presc_df = pd.DataFrame(prescription_rows).drop_duplicates(subset=["doctor_amka", "patient_amka", "drug_id", "start_datetime"])
+    seen_prescriptions = set(
+        presc_df[["doctor_amka", "patient_amka", "drug_id", "start_datetime"]]
+        .astype(str)
+        .itertuples(index=False, name=None)
+    )
+    prescription_rows = presc_df.to_dict("records")
+    attempts = 0
+    while len(prescription_rows) < 360 and attempts < 5000:
+        attempts += 1
+        row = hosp_df.sample(n=1, random_state=SEED + attempts).iloc[0]
+        safe = safe_drugs_for_patient(row.patient_amka)
+        if not safe:
+            continue
+        start_base = datetime.fromisoformat(row.admission_ts) + timedelta(hours=random.randint(1, 48), minutes=attempts % 60)
+        end_limit = datetime.fromisoformat(row.discharge_ts)
+        end_dt = min(end_limit, start_base + timedelta(days=random.randint(1, 7)))
+        if end_dt <= start_base:
+            continue
+        doctor_choices = hosp_doc_df.loc[hosp_doc_df["hosp_id"] == row.hosp_id, "doctor_amka"].tolist()
+        drug_id = pick(safe)
+        key = (str(pick(doctor_choices)), str(row.patient_amka), str(drug_id), start_base.strftime("%Y-%m-%d %H:%M:%S"))
+        if key in seen_prescriptions:
+            continue
+        seen_prescriptions.add(key)
+        prescription_rows.append({
+            "prescription_id": prescription_id,
+            "hosp_id": int(row.hosp_id),
+            "patient_amka": row.patient_amka,
+            "doctor_amka": key[0],
+            "drug_id": drug_id,
+            "dosage": pick(["1 tablet", "500 mg", "1 vial", "1 capsule", "40 mg"]),
+            "frequency": pick(["BID", "TID", "QD", "Q6H", "Q8H"]),
+            "start_datetime": key[3],
+            "end_datetime": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
+        })
+        prescription_id += 1
+    presc_df = pd.DataFrame(prescription_rows).sort_values("prescription_id").reset_index(drop=True)
+    if len(presc_df) < 360:
+        raise ValueError("Could not generate 360 unique, allergy-safe prescriptions.")
 
     # Minimal images
     for img_id, dep in enumerate(dept_df.itertuples(index=False), start=1):
@@ -1263,6 +1494,48 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
         df.to_csv(gen_dir / f"{name}.csv", index=False)
 
     return outputs
+
+
+def validate_generated_bundle(ref, org, patients, generated):
+    """Fail fast if generated clinical rows drift from the reference CSVs."""
+
+    def require_subset(label, values, allowed):
+        missing = sorted(set(pd.Series(values).dropna().astype(str)) - set(pd.Series(allowed).dropna().astype(str)))
+        if missing:
+            preview = ", ".join(missing[:10])
+            raise ValueError(f"{label} contains values missing from its reference table: {preview}")
+
+    hospitalization = generated["hospitalization"]
+    procedure_event = generated["procedure_event"]
+    prescription = generated["prescription"]
+    patient_allergy = generated["patient_allergy"]
+
+    require_subset("hospitalization.ken_code", hospitalization["ken_code"], ref["ken"]["ken_code"])
+    require_subset("icd10_ken_map.ken_code", ref["icd10_ken"]["ken_code"], ref["ken"]["ken_code"])
+    require_subset("hospitalization.admission_icd10_code", hospitalization["admission_icd10_code"], ref["icd10"]["icd10_code"])
+    require_subset("hospitalization.discharge_icd10_code", hospitalization["discharge_icd10_code"], ref["icd10"]["icd10_code"])
+    require_subset("lab_test.test_code", generated["lab_test"]["test_code"], ref["lab_test_catalog"]["test_code"])
+
+    require_subset("procedure_event.procedure_code", procedure_event["procedure_code"], ref["procedure_catalog"]["procedure_code"])
+    proc_place = procedure_event.merge(
+        ref["procedure_catalog"][["procedure_code", "required_place_type"]],
+        on="procedure_code",
+        how="left",
+    ).merge(
+        org["operating_place"][["place_id", "place_type"]],
+        on="place_id",
+        how="left",
+    )
+    bad_place = proc_place[proc_place["required_place_type"] != proc_place["place_type"]]
+    if not bad_place.empty:
+        raise ValueError("procedure_event.place_id does not match procedure_catalog.required_place_type.")
+
+    require_subset("prescription.drug_id", prescription["drug_id"], ref["drug"]["drug_id"])
+    require_subset("patient_allergy.substance_id", patient_allergy["substance_id"], ref["active_substance"]["substance_id"])
+    require_subset("drug_active_substance.drug_id", ref["drug_active_substance"]["drug_id"], ref["drug"]["drug_id"])
+    require_subset("drug_active_substance.substance_id", ref["drug_active_substance"]["substance_id"], ref["active_substance"]["substance_id"])
+    require_subset("prescription.patient_amka", prescription["patient_amka"], patients["patient"]["patient_amka"])
+    require_subset("patient_allergy.patient_amka", patient_allergy["patient_amka"], patients["patient"]["patient_amka"])
 
 
 def write_load_sql(bundle_dir: Path):
@@ -1479,7 +1752,7 @@ This dataset targets the **intended final schema**, with the following minimal c
 3. `emergency_visit` includes `referred_department_id`.
 4. `hospitalization_doctor` includes `doctor_role` and `is_primary`.
 5. `procedure_participant` includes `participant_role`.
-6. `ken.csv` is synthetic fallback data in this version; the official legacy `.doc` KEN source is intentionally ignored.
+6. `ken.csv` uses the improved/official KEN export when available; demo KEN rows are used only as a last-resort fallback.
 7. If the official EMA Article 57 workbook is not supplied, the generator falls back to a clearly marked **demo drug dataset** so Q7/Q10 can still be tested end-to-end.
 
 ## Name mapping logic
@@ -1487,8 +1760,8 @@ This dataset targets the **intended final schema**, with the following minimal c
 - CSV file name == table name whenever possible.
 - Official source -> cleaned output:
   - `4.2 Κωδικοί ICD-10...xls` -> `data/reference/icd10_diagnosis.csv`
-  - KEN official `.doc` is skipped in this version -> synthetic `data/reference/ken.csv`
-  - ICD10-KEN official mapping is skipped in this version -> generated `data/reference/icd10_ken_map.csv`
+  - improved/official KEN export or official KEN `.doc` -> `data/reference/ken.csv`
+  - official ICD10-KEN workbook, filtered against `ken.csv` -> `data/reference/icd10_ken_map.csv`
   - `ΕΛΛΗΝΙΚΗ ΟΝΟΜΑΤΟΛΟΓΙΑ ... ΙΑΤΡΙΚΩΝ ΠΡΑΞΕΩΝ...xls` -> `data/reference/procedure_catalog.csv`
   - same procedure workbook -> derived `data/reference/lab_test_catalog.csv`
 
@@ -1532,6 +1805,7 @@ def main():
     shifts = build_shifts(gen_dir, org)
     emergencies = build_emergency_visits(gen_dir, patients, org)
     clinical = build_clinical_events(gen_dir, ref, org, patients)
+    validate_generated_bundle(ref, org, patients, clinical)
     write_load_sql(bundle_dir)
     write_guides(bundle_dir, ref, {**org, **patients, **shifts, **emergencies, **clinical})
     target_script = bundle_dir / "scripts" / "generate_data.py"
