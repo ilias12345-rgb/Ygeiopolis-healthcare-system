@@ -40,6 +40,7 @@ DROP TABLE IF EXISTS personnel;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
+/* Table: stores shared identity and contact data for all hospital staff. */
 CREATE TABLE personnel (
     amka                    CHAR(11) PRIMARY KEY,
     first_name              VARCHAR(80) NOT NULL,
@@ -50,10 +51,14 @@ CREATE TABLE personnel (
     hiring_date             DATE NOT NULL,
     personnel_type          VARCHAR(20) NOT NULL,
     CONSTRAINT uq_personnel_email UNIQUE (email),
+    CONSTRAINT ck_personnel_amka CHECK (amka REGEXP '^[0-9]{11}$'),
     CONSTRAINT ck_personnel_age CHECK (age BETWEEN 18 AND 100),
+    CONSTRAINT ck_personnel_email CHECK (email LIKE '%_@_%._%'),
+    CONSTRAINT ck_personnel_phone CHECK (phone_number REGEXP '^[0-9+ -]{8,30}$'),
     CONSTRAINT ck_personnel_type CHECK (personnel_type IN ('DOCTOR', 'NURSE', 'ADMIN'))
 );
 
+/* Table: stores doctor-specific details, rank, specialization, and supervision relationships. */
 CREATE TABLE doctor (
     amka                    CHAR(11) PRIMARY KEY,
     license_number          VARCHAR(50) NOT NULL,
@@ -72,6 +77,7 @@ CREATE TABLE doctor (
     CONSTRAINT ck_doctor_rank CHECK (doctor_rank IN ('RESIDENT', 'CONSULTANT_B', 'CONSULTANT_A', 'DIRECTOR'))
 );
 
+/* Table: stores hospital departments, capacity, location, and optional doctor manager. */
 CREATE TABLE department (
     department_id           INT AUTO_INCREMENT PRIMARY KEY,
     department_name         VARCHAR(120) NOT NULL,
@@ -88,6 +94,7 @@ CREATE TABLE department (
     CONSTRAINT uq_department_manager UNIQUE (manager_doctor_amka)
 );
 
+/* Table: stores nurse-specific rank and assigned department. */
 CREATE TABLE nurse (
     amka                    CHAR(11) PRIMARY KEY,
     nurse_rank              VARCHAR(20) NOT NULL,
@@ -103,6 +110,7 @@ CREATE TABLE nurse (
     CONSTRAINT ck_nurse_rank CHECK (nurse_rank IN ('ASSISTANT_NURSE', 'NURSE', 'HEAD_NURSE'))
 );
 
+/* Table: stores administrative staff roles, office duties, and assigned department. */
 CREATE TABLE administrative_staff (
     amka                    CHAR(11) PRIMARY KEY,
     admin_role              VARCHAR(120) NOT NULL,
@@ -119,6 +127,7 @@ CREATE TABLE administrative_staff (
 );
 
 
+/* Table: links doctors to the departments where they can work. */
 CREATE TABLE doctor_department (
     doctor_amka             CHAR(11) NOT NULL,
     department_id           INT NOT NULL,
@@ -133,6 +142,7 @@ CREATE TABLE doctor_department (
         ON UPDATE CASCADE
 );
 
+/* Table: stores department beds, bed type, and occupancy status. */
 CREATE TABLE bed (
     bed_id                   INT AUTO_INCREMENT PRIMARY KEY,
     department_id            INT NOT NULL,
@@ -149,6 +159,7 @@ CREATE TABLE bed (
     CONSTRAINT ck_bed_status CHECK (bed_status IN ('AVAILABLE', 'OCCUPIED', 'MAINTENANCE'))
 ) ENGINE=InnoDB;
 
+/* Table: stores patient demographics, contact details, and insurance data. */
 CREATE TABLE patient (
     patient_amka            CHAR(11) PRIMARY KEY,
     first_name              VARCHAR(80) NOT NULL,
@@ -165,11 +176,16 @@ CREATE TABLE patient (
     nationality             VARCHAR(80) NULL,
     insurance_provider      VARCHAR(120) NOT NULL,
     CONSTRAINT uq_patient_email UNIQUE (email),
+    CONSTRAINT ck_patient_amka CHECK (patient_amka REGEXP '^[0-9]{11}$'),
     CONSTRAINT ck_patient_age CHECK (age BETWEEN 0 AND 120),
+    CONSTRAINT ck_patient_gender CHECK (gender IN ('MALE', 'FEMALE', 'OTHER', 'UNKNOWN')),
     CONSTRAINT ck_patient_weight CHECK (weight_kg IS NULL OR weight_kg > 0),
-    CONSTRAINT ck_patient_height CHECK (height_cm IS NULL OR height_cm > 0)
+    CONSTRAINT ck_patient_height CHECK (height_cm IS NULL OR height_cm > 0),
+    CONSTRAINT ck_patient_email CHECK (email IS NULL OR email LIKE '%_@_%._%'),
+    CONSTRAINT ck_patient_phone CHECK (phone_number REGEXP '^[0-9+ -]{8,30}$')
 );
 
+/* Table: stores one or more emergency contacts for each patient. */
 CREATE TABLE emergency_contact (
     patient_amka            CHAR(11) NOT NULL,
     first_name              VARCHAR(80) NOT NULL,
@@ -180,14 +196,18 @@ CREATE TABLE emergency_contact (
     CONSTRAINT fk_emergency_contact_patient
         FOREIGN KEY (patient_amka) REFERENCES patient(patient_amka)
         ON DELETE CASCADE
-        ON UPDATE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT ck_emergency_contact_email CHECK (email IS NULL OR email LIKE '%_@_%._%'),
+    CONSTRAINT ck_emergency_contact_phone CHECK (phone_number REGEXP '^[0-9+ -]{8,30}$')
 );
 
+/* Table: stores ICD-10 diagnosis reference codes. */
 CREATE TABLE icd10_diagnosis (
     icd10_code              VARCHAR(20) PRIMARY KEY,
     icd10_description       VARCHAR(500) NOT NULL
 );
 
+/* Table: stores KEN reimbursement codes, standard stay length, and costing rules. */
 CREATE TABLE ken (
     ken_code                VARCHAR(20) PRIMARY KEY,
     ken_description         VARCHAR(500) NOT NULL,
@@ -198,6 +218,7 @@ CREATE TABLE ken (
     CONSTRAINT ck_ken_duration CHECK (mean_duration_days >= 0)
 );
 
+/* Table: maps ICD-10 diagnosis prefixes to compatible KEN reimbursement codes. */
 CREATE TABLE icd10_ken_map (
     mdc_code                VARCHAR(20) NOT NULL,
     ken_code                VARCHAR(20) NOT NULL,
@@ -209,6 +230,7 @@ CREATE TABLE icd10_ken_map (
         ON UPDATE CASCADE
 );
 
+/* Table: stores rooms or labs where medical procedures can be scheduled. */
 CREATE TABLE operating_place (
     place_id                INT AUTO_INCREMENT PRIMARY KEY,
     place_name              VARCHAR(120) NOT NULL,
@@ -219,6 +241,7 @@ CREATE TABLE operating_place (
     CONSTRAINT ck_place_status CHECK (place_status IN ('AVAILABLE', 'OCCUPIED', 'MAINTENANCE'))
 );
 
+/* Table: stores shift slots for each department by date and shift type. */
 CREATE TABLE department_shift (
     shift_id                BIGINT AUTO_INCREMENT PRIMARY KEY,
     department_id           INT NOT NULL,
@@ -239,6 +262,7 @@ CREATE TABLE department_shift (
     )
 );
 
+/* Table: assigns personnel to department shifts with an optional role label. */
 CREATE TABLE shift_assignment (
     shift_id                BIGINT NOT NULL,
     personnel_amka          CHAR(11) NOT NULL,
@@ -254,6 +278,7 @@ CREATE TABLE shift_assignment (
         ON UPDATE CASCADE
 );
 
+/* Table: stores emergency department visits, triage details, queue state, and disposition. */
 CREATE TABLE emergency_visit (
     visit_id                BIGINT AUTO_INCREMENT PRIMARY KEY,
     patient_amka            CHAR(11) NOT NULL,
@@ -280,12 +305,17 @@ CREATE TABLE emergency_visit (
         ON UPDATE CASCADE,
     CONSTRAINT ck_emergency_level CHECK (emergency_level BETWEEN 1 AND 5),
     CONSTRAINT ck_emergency_disposition CHECK (disposition IN ('DISCHARGED', 'HOSPITALIZED')),
+    CONSTRAINT ck_emergency_referral CHECK (
+        (disposition = 'HOSPITALIZED' AND referred_department_id IS NOT NULL) OR
+        (disposition = 'DISCHARGED' AND referred_department_id IS NULL)
+    ),
     CONSTRAINT ck_emergency_times CHECK (
         (service_start_ts IS NULL OR service_start_ts >= arrival_ts)
         AND (service_end_ts IS NULL OR service_start_ts IS NULL OR service_end_ts >= service_start_ts)
     )
 );
 
+/* Table: stores inpatient stays, linked bed, diagnoses, KEN code, and calculated cost. */
 CREATE TABLE hospitalization (
     hosp_id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
     patient_amka             CHAR(11) NOT NULL,
@@ -331,6 +361,7 @@ CREATE TABLE hospitalization (
     CONSTRAINT ck_hosp_dates CHECK (discharge_ts IS NULL OR discharge_ts >= admission_ts)
 );
 
+/* Table: links doctors to hospitalizations and marks their care role. */
 CREATE TABLE hospitalization_doctor (
     hosp_id                  BIGINT NOT NULL,
     doctor_amka              CHAR(11) NOT NULL,
@@ -348,12 +379,14 @@ CREATE TABLE hospitalization_doctor (
     CONSTRAINT ck_hosp_doctor_role CHECK (doctor_role IN ('PRIMARY', 'CONSULTING'))
 );
 
+/* Table: stores available laboratory test definitions. */
 CREATE TABLE lab_test_catalog (
     test_code               VARCHAR(30) PRIMARY KEY,
     test_name               TEXT NOT NULL,
     test_type               VARCHAR(80) NOT NULL
 );
 
+/* Table: stores ordered lab tests, results, ordering doctor, and cost. */
 CREATE TABLE lab_test (
     test_id                 BIGINT AUTO_INCREMENT PRIMARY KEY,
     hosp_id                 BIGINT NOT NULL,
@@ -379,15 +412,21 @@ CREATE TABLE lab_test (
     CONSTRAINT ck_lab_test_cost CHECK (cost >= 0)
 );
 
+/* Table: stores procedure definitions and the required place type for scheduling. */
 CREATE TABLE procedure_catalog (
     procedure_code          VARCHAR(30) PRIMARY KEY,
     procedure_name          TEXT NOT NULL,
     procedure_category      VARCHAR(20) NOT NULL,
+    standard_duration_min   INT NULL,
+    standard_cost           DECIMAL(12,2) NOT NULL DEFAULT 0,
     required_place_type     VARCHAR(30) NOT NULL,
     CONSTRAINT ck_procedure_category CHECK (procedure_category IN ('SURGICAL', 'DIAGNOSTIC', 'THERAPEUTIC')),
+    CONSTRAINT ck_procedure_standard_duration CHECK (standard_duration_min IS NULL OR standard_duration_min > 0),
+    CONSTRAINT ck_procedure_standard_cost CHECK (standard_cost >= 0),
     CONSTRAINT ck_required_place_type CHECK (required_place_type IN ('OPERATING_ROOM', 'PROCEDURE_ROOM'))
 );
 
+/* Table: stores scheduled procedure events, chief surgeon, timing, and location. */
 CREATE TABLE procedure_event (
     procedure_event_id      BIGINT AUTO_INCREMENT PRIMARY KEY,
     hosp_id                 BIGINT NOT NULL,
@@ -417,6 +456,7 @@ CREATE TABLE procedure_event (
     CONSTRAINT ck_proc_event_duration CHECK (actual_duration_min > 0)
 );
 
+/* Table: stores additional personnel participating in each procedure. */
 CREATE TABLE procedure_participant (
     procedure_event_id      BIGINT NOT NULL,
     personnel_amka          CHAR(11) NOT NULL,
@@ -433,17 +473,20 @@ CREATE TABLE procedure_participant (
     CONSTRAINT ck_proc_participant_role CHECK (participant_role IN ('ASSISTANT_DOCTOR', 'SCRUB_NURSE'))
 );
 
+/* Table: stores drug master records. */
 CREATE TABLE drug (
     drug_id                 VARCHAR(80) PRIMARY KEY,
     drug_name               VARCHAR(255) NOT NULL
 );
 
+/* Table: stores active substances used for drugs and allergy checks. */
 CREATE TABLE active_substance (
     substance_id            BIGINT AUTO_INCREMENT PRIMARY KEY,
     substance_name          VARCHAR(255) NOT NULL,
     CONSTRAINT uq_substance_name UNIQUE (substance_name)
 );
 
+/* Table: links drugs to their active substances. */
 CREATE TABLE drug_active_substance (
     drug_id                 VARCHAR(80) NOT NULL,
     substance_id            BIGINT NOT NULL,
@@ -458,6 +501,7 @@ CREATE TABLE drug_active_substance (
         ON UPDATE CASCADE
 );
 
+/* Table: stores patient allergies to active substances. */
 CREATE TABLE patient_allergy (
     patient_amka            CHAR(11) NOT NULL,
     substance_id            BIGINT NOT NULL,
@@ -472,6 +516,7 @@ CREATE TABLE patient_allergy (
         ON UPDATE CASCADE
 );
 
+/* Table: stores drug prescriptions for patients during hospitalizations. */
 CREATE TABLE prescription (
     prescription_id         BIGINT AUTO_INCREMENT PRIMARY KEY,
     hosp_id                 BIGINT NOT NULL,
@@ -498,6 +543,7 @@ CREATE TABLE prescription (
     CONSTRAINT ck_prescription_dates CHECK (end_datetime IS NULL OR end_datetime >= start_datetime)
 );
 
+/* Table: stores patient feedback scores and comments for hospitalizations. */
 CREATE TABLE hospitalization_evaluation (
     hosp_id                         BIGINT PRIMARY KEY,
     evaluation_date                DATE NOT NULL,
@@ -518,12 +564,14 @@ CREATE TABLE hospitalization_evaluation (
     CONSTRAINT ck_eval_overall CHECK (overall_experience_score BETWEEN 1 AND 5)
 );
 
+/* Table: stores reusable image URLs and accessibility text. */
 CREATE TABLE image_asset (
     image_id                 BIGINT AUTO_INCREMENT PRIMARY KEY,
     image_url                VARCHAR(500) NOT NULL,
     alt_text                 VARCHAR(500) NOT NULL
 );
 
+/* Table: links image assets to departments, people, or other entities. */
 CREATE TABLE entity_image (
     entity_name              VARCHAR(64) NOT NULL,
     entity_pk                VARCHAR(64) NOT NULL,
@@ -832,11 +880,47 @@ LEFT JOIN doctor doc ON doc.amka = p.amka
 LEFT JOIN nurse n ON n.amka = p.amka
 LEFT JOIN administrative_staff a ON a.amka = p.amka;
 
+/* View: checks the assignment coverage rule for every department shift.
+   The exercise requires at least 3 doctors, 6 nurses, and 2 administrative
+   staff per shift. If residents are present, at least one Consultant A or
+   Director must also be present. */
+CREATE VIEW v_shift_coverage AS
+SELECT
+    ds.shift_id,
+    ds.department_id,
+    d.department_name,
+    ds.shift_date,
+    ds.shift_type,
+    SUM(CASE WHEN p.personnel_type = 'DOCTOR' THEN 1 ELSE 0 END) AS doctor_count,
+    SUM(CASE WHEN p.personnel_type = 'NURSE' THEN 1 ELSE 0 END) AS nurse_count,
+    SUM(CASE WHEN p.personnel_type = 'ADMIN' THEN 1 ELSE 0 END) AS admin_count,
+    SUM(CASE WHEN doc.doctor_rank = 'RESIDENT' THEN 1 ELSE 0 END) AS resident_count,
+    SUM(CASE WHEN doc.doctor_rank IN ('CONSULTANT_A', 'DIRECTOR') THEN 1 ELSE 0 END) AS senior_doctor_count,
+    /* One boolean flag makes validation and final reporting easier to read. */
+    CASE
+        WHEN SUM(CASE WHEN p.personnel_type = 'DOCTOR' THEN 1 ELSE 0 END) >= 3
+         AND SUM(CASE WHEN p.personnel_type = 'NURSE' THEN 1 ELSE 0 END) >= 6
+         AND SUM(CASE WHEN p.personnel_type = 'ADMIN' THEN 1 ELSE 0 END) >= 2
+         AND (
+             SUM(CASE WHEN doc.doctor_rank = 'RESIDENT' THEN 1 ELSE 0 END) = 0 OR
+             SUM(CASE WHEN doc.doctor_rank IN ('CONSULTANT_A', 'DIRECTOR') THEN 1 ELSE 0 END) >= 1
+         )
+        THEN TRUE
+        ELSE FALSE
+    END AS is_requirement_met
+FROM department_shift ds
+JOIN department d ON d.department_id = ds.department_id
+LEFT JOIN shift_assignment sa ON sa.shift_id = ds.shift_id
+LEFT JOIN personnel p ON p.amka = sa.personnel_amka
+LEFT JOIN doctor doc ON doc.amka = p.amka
+GROUP BY ds.shift_id, ds.department_id, d.department_name, ds.shift_date, ds.shift_type;
+
 
 /* Triggers for key business rules */
 
 DELIMITER $$
 
+/* Trigger: validates new doctor supervision rules, including resident supervisors, director independence, and circular hierarchy prevention. */
 CREATE TRIGGER trg_doctor_supervision_bi
 BEFORE INSERT ON doctor
 FOR EACH ROW
@@ -868,6 +952,7 @@ BEGIN
     END IF;
 END$$
 
+/* Trigger: revalidates doctor supervision rules whenever rank or supervisor data changes. */
 CREATE TRIGGER trg_doctor_supervision_bu
 BEFORE UPDATE ON doctor
 FOR EACH ROW
@@ -899,6 +984,7 @@ BEGIN
     END IF;
 END$$
 
+/* Trigger: blocks a new prescription when the patient is allergic to any active substance in the drug. */
 CREATE TRIGGER trg_prescription_no_allergy_bi
 BEFORE INSERT ON prescription
 FOR EACH ROW
@@ -916,6 +1002,7 @@ BEGIN
     END IF;
 END$$
 
+/* Trigger: blocks prescription updates that would assign a drug containing a patient allergy. */
 CREATE TRIGGER trg_prescription_no_allergy_bu
 BEFORE UPDATE ON prescription
 FOR EACH ROW
@@ -933,6 +1020,53 @@ BEGIN
     END IF;
 END$$
 
+/* Trigger: keeps prescriptions inside the related hospitalization period. */
+CREATE TRIGGER trg_prescription_within_hospitalization_bi
+BEFORE INSERT ON prescription
+FOR EACH ROW
+BEGIN
+    DECLARE v_admission_ts DATETIME;
+    DECLARE v_discharge_ts DATETIME;
+
+    SELECT admission_ts, discharge_ts
+      INTO v_admission_ts, v_discharge_ts
+      FROM hospitalization
+     WHERE hosp_id = NEW.hosp_id
+       AND patient_amka = NEW.patient_amka;
+
+    IF NEW.start_datetime < v_admission_ts
+       OR (v_discharge_ts IS NOT NULL AND NEW.start_datetime > v_discharge_ts)
+       OR (NEW.end_datetime IS NOT NULL AND NEW.end_datetime < v_admission_ts)
+       OR (NEW.end_datetime IS NOT NULL AND v_discharge_ts IS NOT NULL AND NEW.end_datetime > v_discharge_ts) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Prescription dates must fall inside the hospitalization period.';
+    END IF;
+END$$
+
+/* Trigger: rechecks hospitalization period bounds when prescription dates change. */
+CREATE TRIGGER trg_prescription_within_hospitalization_bu
+BEFORE UPDATE ON prescription
+FOR EACH ROW
+BEGIN
+    DECLARE v_admission_ts DATETIME;
+    DECLARE v_discharge_ts DATETIME;
+
+    SELECT admission_ts, discharge_ts
+      INTO v_admission_ts, v_discharge_ts
+      FROM hospitalization
+     WHERE hosp_id = NEW.hosp_id
+       AND patient_amka = NEW.patient_amka;
+
+    IF NEW.start_datetime < v_admission_ts
+       OR (v_discharge_ts IS NOT NULL AND NEW.start_datetime > v_discharge_ts)
+       OR (NEW.end_datetime IS NOT NULL AND NEW.end_datetime < v_admission_ts)
+       OR (NEW.end_datetime IS NOT NULL AND v_discharge_ts IS NOT NULL AND NEW.end_datetime > v_discharge_ts) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Prescription dates must fall inside the hospitalization period.';
+    END IF;
+END$$
+
+/* Trigger: prevents a new procedure from overlapping in the same room or with the same chief surgeon. */
 CREATE TRIGGER trg_procedure_room_overlap_bi
 BEFORE INSERT ON procedure_event /* insert of an event */
 FOR EACH ROW
@@ -960,6 +1094,7 @@ BEGIN
     END IF;
 END$$
 
+/* Trigger: prevents updated procedure timing from creating room or chief-surgeon overlaps. */
 CREATE TRIGGER trg_procedure_room_overlap_bu
 BEFORE UPDATE ON procedure_event /* update of an event */
 FOR EACH ROW
@@ -989,6 +1124,47 @@ BEGIN
     END IF;
 END$$
 
+/* Trigger: keeps scheduled procedure events inside the hospitalization period. */
+CREATE TRIGGER trg_procedure_within_hospitalization_bi
+BEFORE INSERT ON procedure_event
+FOR EACH ROW
+BEGIN
+    DECLARE v_admission_ts DATETIME;
+    DECLARE v_discharge_ts DATETIME;
+
+    SELECT admission_ts, discharge_ts
+      INTO v_admission_ts, v_discharge_ts
+      FROM hospitalization
+     WHERE hosp_id = NEW.hosp_id;
+
+    IF NEW.start_ts < v_admission_ts
+       OR (v_discharge_ts IS NOT NULL AND NEW.end_ts > v_discharge_ts) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Procedure event must fall inside the hospitalization period.';
+    END IF;
+END$$
+
+/* Trigger: rechecks hospitalization period bounds when procedure timing changes. */
+CREATE TRIGGER trg_procedure_within_hospitalization_bu
+BEFORE UPDATE ON procedure_event
+FOR EACH ROW
+BEGIN
+    DECLARE v_admission_ts DATETIME;
+    DECLARE v_discharge_ts DATETIME;
+
+    SELECT admission_ts, discharge_ts
+      INTO v_admission_ts, v_discharge_ts
+      FROM hospitalization
+     WHERE hosp_id = NEW.hosp_id;
+
+    IF NEW.start_ts < v_admission_ts
+       OR (v_discharge_ts IS NOT NULL AND NEW.end_ts > v_discharge_ts) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Procedure event must fall inside the hospitalization period.';
+    END IF;
+END$$
+
+/* Trigger: prevents a staff member from being scheduled in overlapping procedures. */
 CREATE TRIGGER trg_procedure_participant_overlap_bi
 BEFORE INSERT ON procedure_participant
 FOR EACH ROW
@@ -1026,6 +1202,7 @@ BEGIN
     END IF;
 END$$
 
+/* Trigger: checks that a new procedure is scheduled in the type of operating place required by its catalog entry. */
 CREATE TRIGGER trg_procedure_place_type_bi
 BEFORE INSERT ON procedure_event
 FOR EACH ROW
@@ -1049,6 +1226,7 @@ BEGIN
     END IF;
 END$$
 
+/* Trigger: checks that procedure updates still match the required operating place type. */
 CREATE TRIGGER trg_procedure_place_type_bu
 BEFORE UPDATE ON procedure_event
 FOR EACH ROW
@@ -1072,6 +1250,7 @@ BEGIN
     END IF;
 END$$
 
+/* Trigger: prevents the chief surgeon from also being inserted as a separate procedure participant. */
 CREATE TRIGGER trg_procedure_participant_not_chief_bi
 BEFORE INSERT ON procedure_participant
 FOR EACH ROW
@@ -1087,6 +1266,7 @@ BEGIN
     END IF;
 END$$
 
+/* Trigger: prevents administrative staff from being added to procedure teams. */
 CREATE TRIGGER trg_procedure_participant_not_admin_bi
 BEFORE INSERT ON procedure_participant
 FOR EACH ROW
@@ -1099,6 +1279,7 @@ BEGIN
     END IF;
 END$$
 
+/* Trigger: prevents updates that would make an administrative staff member a procedure participant. */
 CREATE TRIGGER trg_procedure_participant_not_admin_bu
 BEFORE UPDATE ON procedure_participant
 FOR EACH ROW
@@ -1111,6 +1292,7 @@ BEGIN
     END IF;
 END$$
 
+/* Trigger: requires a resident assigned to a shift to have a senior doctor already assigned to that shift. */
 CREATE TRIGGER trg_shift_resident_supervisor_bi
 BEFORE INSERT ON shift_assignment
 FOR EACH ROW
@@ -1141,6 +1323,7 @@ BEGIN
 END$$
 
 
+/* Trigger: rechecks resident shift assignments after updates so a senior doctor remains present. */
 CREATE TRIGGER trg_shift_resident_supervisor_bu
 BEFORE UPDATE ON shift_assignment
 FOR EACH ROW
@@ -1172,6 +1355,7 @@ END$$
 
 
 
+/* Trigger: enforces monthly shift limits by personnel type when a shift assignment is inserted. */
 CREATE TRIGGER trg_shift_monthly_limits_bi
 BEFORE INSERT ON shift_assignment
 FOR EACH ROW
@@ -1216,6 +1400,7 @@ BEGIN
 END$$  
 
 
+/* Trigger: enforces monthly shift limits by personnel type when a shift assignment is updated. */
 CREATE TRIGGER trg_shift_monthly_limits_bu
 BEFORE UPDATE ON shift_assignment
 FOR EACH ROW
@@ -1262,6 +1447,7 @@ END$$
 
 
 
+/* Trigger: requires at least eight hours of rest before a newly assigned shift. */
 CREATE TRIGGER trg_shift_rest_bi
 BEFORE INSERT ON shift_assignment
 FOR EACH ROW
@@ -1313,6 +1499,7 @@ BEGIN
 
 END$$
 
+/* Trigger: requires at least eight hours of rest before an updated shift assignment. */
 CREATE TRIGGER trg_shift_rest_bu
 BEFORE UPDATE ON shift_assignment
 FOR EACH ROW
@@ -1365,6 +1552,7 @@ BEGIN
 
 END$$
 
+/* Trigger: prevents assigning more than three consecutive night shifts. */
 CREATE TRIGGER trg_night_shifts_limit_bi
 BEFORE INSERT ON shift_assignment
 FOR EACH ROW
@@ -1396,6 +1584,7 @@ BEGIN
     END IF;
 END$$
 
+/* Trigger: prevents updates that would create more than three consecutive night shifts. */
 CREATE TRIGGER trg_night_shifts_limit_bu
 BEFORE UPDATE ON shift_assignment
 FOR EACH ROW
@@ -1427,6 +1616,98 @@ BEGIN
     END IF;
 END$$
 
+/* Trigger: prevents hospitalization rows from assigning a bed in another department or double-booking a bed/patient. */
+CREATE TRIGGER trg_hosp_bed_patient_rules_bi
+BEFORE INSERT ON hospitalization
+FOR EACH ROW
+BEGIN
+    DECLARE v_bed_department_id INT;
+    DECLARE v_new_discharge_ts DATETIME;
+
+    SET v_new_discharge_ts = COALESCE(NEW.discharge_ts, '9999-12-31 23:59:59');
+
+    SELECT department_id
+      INTO v_bed_department_id
+      FROM bed
+     WHERE bed_id = NEW.bed_id;
+
+    IF v_bed_department_id != NEW.department_id THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Hospitalization bed must belong to the hospitalization department.';
+    END IF;
+
+    /* Overlap rule: two intervals overlap when each starts before the other ends. */
+    IF EXISTS (
+        SELECT 1
+        FROM hospitalization h
+        WHERE h.bed_id = NEW.bed_id
+          AND NEW.admission_ts < COALESCE(h.discharge_ts, '9999-12-31 23:59:59')
+          AND v_new_discharge_ts > h.admission_ts
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Bed is already assigned to an overlapping hospitalization.';
+    END IF;
+
+    /* A patient cannot be admitted to two departments at the same time. */
+    IF EXISTS (
+        SELECT 1
+        FROM hospitalization h
+        WHERE h.patient_amka = NEW.patient_amka
+          AND NEW.admission_ts < COALESCE(h.discharge_ts, '9999-12-31 23:59:59')
+          AND v_new_discharge_ts > h.admission_ts
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Patient already has an overlapping hospitalization.';
+    END IF;
+END$$
+
+/* Trigger: keeps hospitalization bed and patient assignments valid after updates. */
+CREATE TRIGGER trg_hosp_bed_patient_rules_bu
+BEFORE UPDATE ON hospitalization
+FOR EACH ROW
+BEGIN
+    DECLARE v_bed_department_id INT;
+    DECLARE v_new_discharge_ts DATETIME;
+
+    SET v_new_discharge_ts = COALESCE(NEW.discharge_ts, '9999-12-31 23:59:59');
+
+    SELECT department_id
+      INTO v_bed_department_id
+      FROM bed
+     WHERE bed_id = NEW.bed_id;
+
+    IF v_bed_department_id != NEW.department_id THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Hospitalization bed must belong to the hospitalization department.';
+    END IF;
+
+    /* Reuse the same interval-overlap test while ignoring the row being updated. */
+    IF EXISTS (
+        SELECT 1
+        FROM hospitalization h
+        WHERE h.hosp_id != NEW.hosp_id
+          AND h.bed_id = NEW.bed_id
+          AND NEW.admission_ts < COALESCE(h.discharge_ts, '9999-12-31 23:59:59')
+          AND v_new_discharge_ts > h.admission_ts
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Bed is already assigned to an overlapping hospitalization.';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM hospitalization h
+        WHERE h.hosp_id != NEW.hosp_id
+          AND h.patient_amka = NEW.patient_amka
+          AND NEW.admission_ts < COALESCE(h.discharge_ts, '9999-12-31 23:59:59')
+          AND v_new_discharge_ts > h.admission_ts
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Patient already has an overlapping hospitalization.';
+    END IF;
+END$$
+
+/* Trigger: calculates hospitalization total_cost from KEN base cost and extra daily cost on insert. */
 CREATE TRIGGER trg_extra_hospitalization_cost_bi
 BEFORE INSERT ON hospitalization
 FOR EACH ROW
@@ -1457,6 +1738,7 @@ BEGIN
 
 END$$
 
+/* Trigger: recalculates hospitalization total_cost from KEN rules when stay dates or KEN data change. */
 CREATE TRIGGER trg_extra_hospitalization_cost_bu
 BEFORE UPDATE ON hospitalization
 FOR EACH ROW
@@ -1489,8 +1771,9 @@ END$$
 
 /* ---------------------------------------------------------------------------
    Workflow stored procedures.
-   Procedures centralize common application actions. The existing constraints
-   and triggers still perform the final safety checks.
+   Procedures centralize common application actions. Multi-table workflows use
+   explicit transactions, and the existing constraints/triggers still perform
+   the final safety checks.
 --------------------------------------------------------------------------- */
 
 CREATE PROCEDURE sp_next_emergency_visit(IN p_department_id INT)
@@ -1509,6 +1792,14 @@ BEGIN
     DECLARE v_arrival DATETIME;
     DECLARE v_service_start DATETIME;
     DECLARE v_service_end DATETIME;
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+
+    /* Lock the emergency visit so two users cannot start the same service. */
+    START TRANSACTION;
 
     SELECT COUNT(*)
       INTO v_exists
@@ -1523,7 +1814,8 @@ BEGIN
     SELECT arrival_ts, service_start_ts, service_end_ts
       INTO v_arrival, v_service_start, v_service_end
       FROM emergency_visit
-     WHERE visit_id = p_visit_id;
+     WHERE visit_id = p_visit_id
+     FOR UPDATE;
 
     IF v_service_end IS NOT NULL THEN
         SIGNAL SQLSTATE '45000'
@@ -1542,6 +1834,8 @@ BEGIN
            END
      WHERE visit_id = p_visit_id;
 
+    COMMIT;
+
     SELECT *
     FROM emergency_visit
     WHERE visit_id = p_visit_id;
@@ -1559,6 +1853,14 @@ BEGIN
     DECLARE v_service_end DATETIME;
     DECLARE v_final_start DATETIME;
     DECLARE v_final_end DATETIME;
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+
+    /* Finishing service changes several state fields, so it is atomic. */
+    START TRANSACTION;
 
     SELECT COUNT(*)
       INTO v_exists
@@ -1583,7 +1885,8 @@ BEGIN
     SELECT arrival_ts, service_start_ts, service_end_ts
       INTO v_arrival, v_service_start, v_service_end
       FROM emergency_visit
-     WHERE visit_id = p_visit_id;
+     WHERE visit_id = p_visit_id
+     FOR UPDATE;
 
     IF v_service_end IS NOT NULL THEN
         SIGNAL SQLSTATE '45000'
@@ -1603,6 +1906,8 @@ BEGIN
            END
      WHERE visit_id = p_visit_id;
 
+    COMMIT;
+
     SELECT *
     FROM emergency_visit
     WHERE visit_id = p_visit_id;
@@ -1620,7 +1925,20 @@ CREATE PROCEDURE sp_admit_patient(
 BEGIN
     DECLARE v_bed_id INT DEFAULT NULL;
     DECLARE v_hosp_id BIGINT;
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
     DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_bed_id = NULL;
+
+    /* Admission inserts hospitalization data, links the doctor, and occupies a bed. */
+    START TRANSACTION;
+
+    IF p_admission_ts IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Admission timestamp is required.';
+    END IF;
 
     IF NOT EXISTS (
         SELECT 1
@@ -1630,6 +1948,17 @@ BEGIN
     ) THEN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'Primary doctor is not assigned to the admission department.';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM hospitalization h
+        WHERE h.patient_amka = p_patient_amka
+          AND h.admission_ts <= p_admission_ts
+          AND (h.discharge_ts IS NULL OR h.discharge_ts > p_admission_ts)
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Patient already has an active hospitalization at the admission timestamp.';
     END IF;
 
     SELECT b.bed_id
@@ -1645,7 +1974,9 @@ BEGIN
              AND (h.discharge_ts IS NULL OR h.discharge_ts > p_admission_ts)
        )
      ORDER BY FIELD(b.bed_type, 'MULTI_BED', 'SINGLE', 'ICU'), b.bed_number
-     LIMIT 1;
+     LIMIT 1
+     /* This row lock prevents two concurrent admissions from taking the same bed. */
+     FOR UPDATE;
 
     IF v_bed_id IS NULL THEN
         SIGNAL SQLSTATE '45000'
@@ -1679,6 +2010,8 @@ BEGIN
        SET bed_status = 'OCCUPIED'
      WHERE bed_id = v_bed_id;
 
+    COMMIT;
+
     SELECT *
     FROM hospitalization
     WHERE hosp_id = v_hosp_id;
@@ -1693,7 +2026,16 @@ BEGIN
     DECLARE v_exists INT DEFAULT 0;
     DECLARE v_bed_id INT;
     DECLARE v_admission_ts DATETIME;
+    DECLARE v_existing_discharge_ts DATETIME;
     DECLARE v_discharge_ts DATETIME;
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+
+    /* Discharge updates the stay and releases the bed together. */
+    START TRANSACTION;
 
     SELECT COUNT(*)
       INTO v_exists
@@ -1705,12 +2047,23 @@ BEGIN
             SET MESSAGE_TEXT = 'Hospitalization does not exist.';
     END IF;
 
-    SELECT bed_id, admission_ts
-      INTO v_bed_id, v_admission_ts
+    SELECT bed_id, admission_ts, discharge_ts
+      INTO v_bed_id, v_admission_ts, v_existing_discharge_ts
       FROM hospitalization
-     WHERE hosp_id = p_hosp_id;
+     WHERE hosp_id = p_hosp_id
+     FOR UPDATE;
+
+    IF v_existing_discharge_ts IS NOT NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Hospitalization is already discharged.';
+    END IF;
 
     SET v_discharge_ts = COALESCE(p_discharge_ts, NOW());
+
+    IF p_discharge_icd10_code IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Discharge ICD-10 code is required.';
+    END IF;
 
     IF v_discharge_ts < v_admission_ts THEN
         SIGNAL SQLSTATE '45000'
@@ -1733,6 +2086,8 @@ BEGIN
              AND h.admission_ts <= v_discharge_ts
              AND (h.discharge_ts IS NULL OR h.discharge_ts > v_discharge_ts)
        );
+
+    COMMIT;
 
     SELECT *
     FROM hospitalization

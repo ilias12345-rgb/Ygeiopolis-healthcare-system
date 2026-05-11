@@ -175,6 +175,24 @@ def derive_place_type(name: str, category: str) -> str:
     return "PROCEDURE_ROOM"
 
 
+def derive_standard_duration_min(name: str, category: str) -> int:
+    seed = sum(ord(ch) for ch in name)
+    if category == "SURGICAL":
+        return 60 + (seed % 7) * 15
+    if category == "THERAPEUTIC":
+        return 30 + (seed % 5) * 15
+    return 15 + (seed % 4) * 15
+
+
+def derive_standard_cost(name: str, category: str) -> float:
+    seed = sum(ord(ch) for ch in name)
+    if category == "SURGICAL":
+        return round(650.0 + (seed % 12) * 125.0, 2)
+    if category == "THERAPEUTIC":
+        return round(250.0 + (seed % 8) * 75.0, 2)
+    return round(45.0 + (seed % 6) * 35.0, 2)
+
+
 def derive_test_type(name: str) -> str:
     n = name.upper()
     if any(k in n for k in ["ΑΙΜΑ", "ΑΙΜΑΤ", "ΒΙΟΧΗΜ", "ΟΡΡ"]):
@@ -231,10 +249,7 @@ class BedAllocator:
             if all(not self.overlaps(start_ts, end_ts, s, e) for s, e in self.busy[bed_id]):
                 self.busy[bed_id].append((start_ts, end_ts))
                 return bed_id
-        # fallback: choose least loaded bed in department
-        bed_id = min(self.by_dept[department_id], key=lambda b: len(self.busy[b]))
-        self.busy[bed_id].append((start_ts, end_ts))
-        return bed_id
+        return None
 
 
 def resolve_source_file(source_dir: Path, candidates):
@@ -549,7 +564,17 @@ def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | No
     proc = proc[proc["procedure_code"].notna() & proc["procedure_name"].notna()]
     proc = proc[proc["procedure_code"].str.match(r"^[A-ZΑ-Ω][A-Z0-9]{4,}$", na=False)].drop_duplicates("procedure_code").reset_index(drop=True)
     proc["procedure_category"] = proc["procedure_name"].apply(derive_proc_category)
+    proc["standard_duration_min"] = proc.apply(lambda r: derive_standard_duration_min(r["procedure_name"], r["procedure_category"]), axis=1)
+    proc["standard_cost"] = proc.apply(lambda r: derive_standard_cost(r["procedure_name"], r["procedure_category"]), axis=1)
     proc["required_place_type"] = proc.apply(lambda r: derive_place_type(r["procedure_name"], r["procedure_category"]), axis=1)
+    proc = proc[[
+        "procedure_code",
+        "procedure_name",
+        "procedure_category",
+        "required_place_type",
+        "standard_duration_min",
+        "standard_cost",
+    ]]
     proc.to_csv(out_ref_dir / "procedure_catalog.csv", index=False)
 
     # Lab test catalog derived from official procedure file
@@ -835,7 +860,7 @@ def build_people_and_org(gen_dir: Path):
     }
 
 
-def build_patients(gen_dir: Path, count=230):
+def build_patients(gen_dir: Path, count=500):
     """Create patients and optional emergency contacts."""
 
     patient_rows, contact_rows = [], []
@@ -965,7 +990,7 @@ def build_shifts(gen_dir: Path, org):
     return {"department_shift": shift_df, "shift_assignment": assign_df}
 
 
-def build_emergency_visits(gen_dir: Path, patients, org, count=650):
+def build_emergency_visits(gen_dir: Path, patients, org, count=1500):
     """Create emergency visits with triage levels and service timestamps."""
 
     patient_df = patients["patient"]
@@ -1015,7 +1040,16 @@ def build_emergency_visits(gen_dir: Path, patients, org, count=650):
     return {"emergency_visit": ev_df}
 
 
-def build_clinical_events(gen_dir: Path, ref, org, patients):
+def build_clinical_events(
+    gen_dir: Path,
+    ref,
+    org,
+    patients,
+    hospitalization_count=1200,
+    lab_test_count=800,
+    procedure_event_count=500,
+    prescription_count=1000,
+):
     """Create hospitalizations and related clinical events."""
 
     dept_df = org["department"]
@@ -1131,6 +1165,10 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
     # --- hospitalizations: targeted first ---
     hosp_id = 1
     used_hosp_patient = set()
+    patient_schedules = defaultdict(list)
+
+    def patient_is_available(patient_amka, start_ts, end_ts):
+        return all(not (start_ts < e and s < end_ts) for s, e in patient_schedules[patient_amka])
 
     def add_hospitalization(patient_amka, department_id, admission_ts, stay_days, prefix=None, forced_ken=None):
         nonlocal hosp_id
@@ -1140,7 +1178,11 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
         adm_code = pick_full_icd(prefix_local)
         discharge_code = adm_code if random.random() < 0.65 else pick_full_icd(prefix_local)
         discharge_ts = admission_ts + timedelta(days=stay_days, hours=random.randint(2, 18))
+        if not patient_is_available(patient_amka, admission_ts, discharge_ts):
+            return False
         bed_id = allocator.allocate(department_id, admission_ts, discharge_ts)
+        if bed_id is None:
+            return False
         actual_days, total_cost = compute_total_cost(ken_code, admission_ts, discharge_ts)
         hosp_rows.append({
             "hosp_id": hosp_id,
@@ -1181,7 +1223,9 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
                 ]),
             })
         used_hosp_patient.add((hosp_id, patient_amka))
+        patient_schedules[patient_amka].append((admission_ts, discharge_ts))
         hosp_id += 1
+        return True
 
     # Q3 pattern: >3 hospitalizations in same department
     for p in repeat_same_dept_patients:
@@ -1213,14 +1257,19 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
                 admission = datetime(year, random.randint(1, 11), random.randint(1, 20), 11, 0, 0)
                 add_hospitalization(p, dep_id, admission, stay_days=random.randint(1, 5), prefix=prefix)
 
-    # Fill to target 550
-    target_hosp = 550
-    while len(hosp_rows) < target_hosp:
+    # Fill to the requested target while preserving no-overlap bed and patient rules.
+    attempts = 0
+    max_attempts = hospitalization_count * 80
+    while len(hosp_rows) < hospitalization_count and attempts < max_attempts:
+        attempts += 1
         p = pick(patient_ids)
         dep_id = pick(dept_ids)
         admission = datetime(2025,1,1,8,0,0) + timedelta(days=random.randint(0, 715), hours=random.randint(0, 16))
         prefix = None
         add_hospitalization(p, dep_id, admission, stay_days=random.randint(1, 12), prefix=prefix)
+
+    if len(hosp_rows) < hospitalization_count:
+        raise ValueError(f"Could only generate {len(hosp_rows)} hospitalizations without bed/patient overlaps.")
 
     hosp_df = pd.DataFrame(hosp_rows)
     hosp_doc_df = pd.DataFrame(hosp_doctor_rows).drop_duplicates()
@@ -1229,7 +1278,7 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
     # Lab tests
     test_id = 1
     lab_codes = list(lab_cat["test_code"])
-    for row in hosp_df.sample(n=260, random_state=SEED).itertuples(index=False):
+    for row in hosp_df.sample(n=min(lab_test_count, len(hosp_df)), random_state=SEED).itertuples(index=False):
         ordered_by = pick(hosp_doc_df.loc[hosp_doc_df["hosp_id"] == row.hosp_id, "doctor_amka"])
         start_dt = datetime.fromisoformat(row.admission_ts)
         end_dt = datetime.fromisoformat(row.discharge_ts)
@@ -1264,7 +1313,7 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
     top_surgeons = surgeon_candidates[surgeon_candidates["doctor_rank"].isin(["DIRECTOR","CONSULTANT_A","CONSULTANT_B"])].sample(n=12, random_state=SEED)["amka"].tolist()
     weighted_surgeons = top_surgeons + surgeon_candidates["amka"].tolist()
 
-    surgical_hosps = hosp_df.sample(n=180, random_state=SEED)
+    surgical_hosps = hosp_df.sample(n=min(procedure_event_count, len(hosp_df)), random_state=SEED)
     for row in surgical_hosps.itertuples(index=False):
         proc_code = pick(surg_proc if random.random() < 0.82 else diag_proc)
         place_type = proc_place_type[proc_code]
@@ -1381,7 +1430,15 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
         d2_candidates = [d for d in drugs_by_sub.get(pair[1], []) if d in safe and d not in d1_candidates]
         if not d1_candidates or not d2_candidates:
             continue
-        start_base = datetime.fromisoformat(row.admission_ts) + timedelta(hours=random.randint(3, 24))
+        admission_ts = datetime.fromisoformat(row.admission_ts)
+        discharge_ts = datetime.fromisoformat(row.discharge_ts)
+        max_start_hours = max(1, int((discharge_ts - admission_ts).total_seconds() // 3600) - 2)
+        if max_start_hours < 3:
+            continue
+        start_base = admission_ts + timedelta(hours=random.randint(3, min(24, max_start_hours)))
+        end_dt = min(discharge_ts, start_base + timedelta(days=random.randint(2, 6)))
+        if end_dt <= start_base:
+            continue
         doctor_choices = hosp_doc_df.loc[hosp_doc_df["hosp_id"] == row.hosp_id, "doctor_amka"].tolist()
         for drug_id in [pick(d1_candidates), pick(d2_candidates)]:
             prescription_rows.append({
@@ -1393,12 +1450,12 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
                 "dosage": pick(["1 tablet", "500 mg", "1 vial", "1 capsule", "40 mg"]),
                 "frequency": pick(["BID", "TID", "QD", "Q6H"]),
                 "start_datetime": start_base.strftime("%Y-%m-%d %H:%M:%S"),
-                "end_datetime": (start_base + timedelta(days=random.randint(2,6))).strftime("%Y-%m-%d %H:%M:%S"),
+                "end_datetime": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
             })
             prescription_id += 1
 
     # fill remainder
-    while len(prescription_rows) < 360:
+    while len(prescription_rows) < prescription_count:
         row = hosp_df.sample(n=1).iloc[0]
         safe = safe_drugs_for_patient(row.patient_amka)
         if not safe:
@@ -1429,7 +1486,7 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
     )
     prescription_rows = presc_df.to_dict("records")
     attempts = 0
-    while len(prescription_rows) < 360 and attempts < 5000:
+    while len(prescription_rows) < prescription_count and attempts < prescription_count * 20:
         attempts += 1
         row = hosp_df.sample(n=1, random_state=SEED + attempts).iloc[0]
         safe = safe_drugs_for_patient(row.patient_amka)
@@ -1574,7 +1631,7 @@ def write_load_sql(bundle_dir: Path):
     load_lines += block('data/reference/icd10_diagnosis.csv', 'icd10_diagnosis', ['icd10_code','icd10_description'])
     load_lines += block('data/reference/ken.csv', 'ken', ['ken_code','ken_description','basic_cost','mean_duration_days','extra_daily_cost'])
     load_lines += block('data/reference/icd10_ken_map.csv', 'icd10_ken_map', ['mdc_code','ken_code','icd10_code_prefix'])
-    load_lines += block('data/reference/procedure_catalog.csv', 'procedure_catalog', ['procedure_code','procedure_name','procedure_category','required_place_type'])
+    load_lines += block('data/reference/procedure_catalog.csv', 'procedure_catalog', ['procedure_code','procedure_name','procedure_category','required_place_type','standard_duration_min','standard_cost'])
     load_lines += block('data/reference/lab_test_catalog.csv', 'lab_test_catalog', ['test_code','test_name','test_type'])
     load_lines += block('data/reference/drug.csv', 'drug', ['drug_id','drug_name'])
     load_lines += block('data/reference/active_substance.csv', 'active_substance', ['substance_id','substance_name'])
@@ -1702,6 +1759,18 @@ def write_load_sql(bundle_dir: Path):
     ])
 
     (sql_dir / "load.sql").write_text("\n".join(load_lines), encoding="utf-8")
+    (sql_dir / "setup.sql").write_text(
+        "\n".join([
+            "-- Portable setup script. Run from the generated bundle root:",
+            "-- mysql --local-infile=1 -u root -p < sql/setup.sql",
+            "",
+            "SOURCE sql/install.sql;",
+            "SOURCE sql/load.sql;",
+            "SOURCE sql/validation.sql;",
+            "",
+        ]),
+        encoding="utf-8",
+    )
 
 def write_guides(bundle_dir: Path, ref, generated):
     # table map
@@ -1741,6 +1810,8 @@ This bundle contains:
 - a deterministic **query-driven synthetic dataset**;
     - a Python generator script: `scripts/generate_data.py`;
 - a convenience loader: `sql/load.sql`;
+- a portable setup runner: `sql/setup.sql`;
+- copies of `sql/install.sql`, `sql/schema.sql`, and `sql/validation.sql` from the project;
 - a table-to-CSV manifest: `TABLE_TO_CSV_MAP.csv`.
 
 ## Important schema assumptions
@@ -1754,6 +1825,7 @@ This dataset targets the **intended final schema**, with the following minimal c
 5. `procedure_participant` includes `participant_role`.
 6. `ken.csv` uses the improved/official KEN export when available; demo KEN rows are used only as a last-resort fallback.
 7. If the official EMA Article 57 workbook is not supplied, the generator falls back to a clearly marked **demo drug dataset** so Q7/Q10 can still be tested end-to-end.
+8. Procedure codes and names come from the official procedure catalog; standard duration/cost are deterministic estimates derived by procedure category because the source workbook does not provide clean cost fields for every row.
 
 ## Name mapping logic
 
@@ -1789,6 +1861,12 @@ def main():
     parser.add_argument("--output-dir", default=str(default_root / "hospital_dataset_bundle"), help="Output bundle root.")
     parser.add_argument("--ema-xlsx", default=None, help="Optional EMA Article 57 workbook for official drug reference data.")
     parser.add_argument("--no-demo-drugs", action="store_true", help="Disable the fallback demo drug dataset if EMA is missing.")
+    parser.add_argument("--patient-count", type=int, default=500, help="Number of synthetic patients to generate.")
+    parser.add_argument("--emergency-count", type=int, default=1500, help="Number of synthetic emergency visits to generate.")
+    parser.add_argument("--hospitalization-count", type=int, default=1200, help="Target number of hospitalizations to generate.")
+    parser.add_argument("--lab-test-count", type=int, default=800, help="Target number of lab tests to generate.")
+    parser.add_argument("--procedure-count", type=int, default=500, help="Target number of procedure events to attempt.")
+    parser.add_argument("--prescription-count", type=int, default=1000, help="Target number of prescriptions to generate.")
     args = parser.parse_args()
 
     source_dir = Path(args.source_dir).expanduser().resolve()
@@ -1801,12 +1879,27 @@ def main():
 
     ref = load_reference_data(source_dir, ref_dir, ema_xlsx=Path(args.ema_xlsx) if args.ema_xlsx else None, allow_demo_drugs=not args.no_demo_drugs)
     org = build_people_and_org(gen_dir)
-    patients = build_patients(gen_dir)
+    patients = build_patients(gen_dir, count=args.patient_count)
     shifts = build_shifts(gen_dir, org)
-    emergencies = build_emergency_visits(gen_dir, patients, org)
-    clinical = build_clinical_events(gen_dir, ref, org, patients)
+    emergencies = build_emergency_visits(gen_dir, patients, org, count=args.emergency_count)
+    clinical = build_clinical_events(
+        gen_dir,
+        ref,
+        org,
+        patients,
+        hospitalization_count=args.hospitalization_count,
+        lab_test_count=args.lab_test_count,
+        procedure_event_count=args.procedure_count,
+        prescription_count=args.prescription_count,
+    )
     validate_generated_bundle(ref, org, patients, clinical)
     write_load_sql(bundle_dir)
+    project_sql_dir = script_path.parents[1] / "sql"
+    for sql_name in ["install.sql", "schema.sql", "validation.sql"]:
+        source_sql = project_sql_dir / sql_name
+        target_sql = bundle_dir / "sql" / sql_name
+        if source_sql.exists() and source_sql.resolve() != target_sql.resolve():
+            shutil.copy2(source_sql, target_sql)
     write_guides(bundle_dir, ref, {**org, **patients, **shifts, **emergencies, **clinical})
     target_script = bundle_dir / "scripts" / "generate_data.py"
     if script_path.resolve() != target_script.resolve():

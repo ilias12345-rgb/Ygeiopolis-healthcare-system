@@ -30,12 +30,12 @@
 - A final `sql/queries.sql` file with the exercise queries, ideally numbered Q1-Q15.
 - A reproducible `data/` bundle, or clear instructions for where the required official source workbooks must be placed.
 - Official KEN and EMA drug data replacement if the final exercise requires only official reference data.
-- More negative trigger test cases, for example insert attempts that should fail.
 - A short submission note explaining which data is official, which is synthetic, and why.
+- Optional negative trigger test cases, for example insert attempts that should fail and are rolled back.
 
 ## Code Quality Notes
 
 - The schema is strong in relational structure: primary keys, foreign keys, check constraints, indexes, and business-rule triggers are all present.
 - The generator is useful because it creates query-driven data instead of random-only data.
-- Some trigger logic is complex. For final submission, add small SQL test cases proving each trigger blocks invalid data.
+- Some trigger logic is complex. For final submission, keep the validation output and add small rolled-back SQL test cases for the most important rejected inserts if time allows.
 - Indexes should be checked with `EXPLAIN` once the final query file exists, then pruned to match the actual workload.

@@ -38,30 +38,32 @@ Implemented in `sql/schema.sql`.
 - `sp_add_procedure_participant`: adds procedure participants while existing triggers enforce participant rules.
 - `sp_assign_staff_to_shift`: assigns staff to a shift while existing triggers enforce shift rules.
 - `sp_record_evaluation`: records or updates a post-discharge hospitalization evaluation.
+- Admission, discharge, and emergency-service procedures now use explicit transactions and row locks for safer multi-step updates.
 
-### 4. Synchronized Data Generation
+### 4. Additional Constraints And Validation
 
-Implemented in `scripts/generate_data.py` and `sql/load_workbench_absolute.sql`.
+Implemented in `sql/schema.sql` and `sql/validation.sql`.
+
+- AMKA, email, phone, gender, emergency disposition/referral, procedure duration, and procedure cost checks were added.
+- Hospitalization triggers prevent bed/department mismatches, overlapping bed assignments, and overlapping patient hospitalizations.
+- Prescription and procedure triggers keep clinical events inside the hospitalization period.
+- `v_shift_coverage` reports whether each shift meets the required 3 doctors, 6 nurses, and 2 administrative staff.
+- `sql/validation.sql` now includes broader row counts plus consistency checks for beds, shifts, prescriptions, procedures, and emergency visits.
+
+### 5. Synchronized Data Generation
+
+Implemented in `scripts/generate_data.py` and `sql/load.sql`.
 
 - KEN rows are loaded from the improved/official `ken.csv` when available; demo `DKEN...` values are used only as a last-resort fallback.
 - `icd10_ken_map.csv` is filtered or rebuilt so every mapped KEN code exists in `ken.csv`.
 - Hospitalizations are generated only from valid ICD-10 and KEN references.
 - Procedure events use `procedure_code` values from `procedure_catalog.csv` and choose rooms with a matching required place type.
+- Procedure catalog rows now include deterministic standard duration and cost fields when the official source does not provide clean values for every row.
 - Drug, active-substance, allergy, and prescription rows are validated against their reference CSVs before the bundle is accepted.
-- The Workbench absolute loader points to the regenerated `rdbms_final_data` bundle.
+- The portable loader uses relative `data/reference` and `data/generated` paths, so the bundle can run on another laptop.
+- Generator count options can produce larger datasets for clearer query plans and fuller reports.
 
 ## Remaining
-
-### 5. Validation Scripts
-
-Extend `sql/validation.sql` with:
-
-- broader row counts per table;
-- orphan detection for key foreign-key relationships;
-- occupied beds without active hospitalization;
-- active hospitalization without occupied bed status;
-- emergency visits with inconsistent timestamps;
-- negative trigger tests that intentionally attempt invalid inserts and confirm they fail.
 
 ### 6. Query File
 

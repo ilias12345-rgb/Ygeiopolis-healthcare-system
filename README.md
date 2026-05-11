@@ -1,8 +1,8 @@
 # Ygeiopolis Healthcare System
 
-Ygeiopolis is a relational database project for a hospital information system. It models the operational and clinical data of a healthcare organization, including personnel, departments, beds, shifts, patients, emergency visits, hospitalizations, diagnoses, procedures, lab tests, prescriptions, allergies, evaluations, and image metadata.
+Relational database project for the General Hospital "Ygeiopolis" semester assignment, academic year 2025-2026.
 
-The project is designed as a complete database deliverable. The schema uses primary keys, foreign keys, unique constraints, check constraints, indexes, triggers, reporting views, and stored procedures so the database protects important business rules directly.
+The database models hospital departments, staff, shifts, emergency triage, patients, hospitalizations, diagnoses, KEN costing, lab tests, procedures, prescriptions, allergies, evaluations, and image metadata. It is implemented in SQL with primary keys, foreign keys, unique constraints, domain checks, indexes, views, triggers, and stored procedures.
 
 ## Repository Structure
 
@@ -19,73 +19,145 @@ The project is designed as a complete database deliverable. The schema uses prim
 │   ├── generate_data.py
 │   └── README.md
 ├── sql/
+│   ├── install.sql
 │   ├── schema.sql
+│   ├── setup.sql
+│   ├── load.sql
 │   ├── validation.sql
-│   ├── load_workbench_absolute.sql
-│   ├── setup_workbench_absolute.sql
 │   └── README.md
 └── README.md
 ```
 
-## Main Logic
-
-The database is organized around six functional areas:
-
-1. **Hospital organization**: `department`, `bed`, `operating_place`.
-2. **Personnel**: `personnel` is the parent table; `doctor`, `nurse`, and `administrative_staff` specialize it.
-3. **Scheduling**: `department_shift` defines shifts and `shift_assignment` connects staff to shifts.
-4. **Patient flow**: `patient`, `emergency_contact`, `emergency_visit`, and `hospitalization` describe the path from emergency arrival to admission/discharge.
-5. **Clinical work**: `icd10_diagnosis`, `ken`, `icd10_ken_map`, `lab_test`, `procedure_event`, `procedure_participant`, and `prescription`.
-6. **Quality/support data**: `hospitalization_evaluation`, `image_asset`, and `entity_image`.
-
-Important rules are enforced inside SQL:
-
-- doctors cannot supervise themselves or form supervision cycles;
-- resident doctors must have appropriate supervision;
-- prescriptions are blocked when the patient is allergic to a drug substance;
-- procedures cannot overlap in the same operating/procedure room;
-- staff cannot be assigned to overlapping procedure participation;
-- administrative staff cannot participate in medical procedures;
-- shift limits, rest-time rules, and night-shift limits are enforced;
-- hospitalization cost is calculated from KEN cost rules.
-
-The schema also includes workflow objects:
-
-- FIFO-style emergency queue view and procedures;
-- reporting views for beds, occupancy, active admissions, patient history, doctor workload, prescriptions, and shift rosters;
-- stored procedures for admission, discharge, prescription, procedure scheduling, shift assignment, and post-discharge evaluation.
-
 ## How To Run
 
-Create the database schema:
+Create the schema:
 
 ```bash
-mysql -u root -p < sql/schema.sql
+mysql -u root -p < sql/install.sql
 ```
 
-If you are using the local exercise folder, rebuild the schema, load the absolute-path CSV bundle, and run validation by opening this file in MySQL Workbench and executing it:
-
-```text
-/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/Ygeiopolis-healthcare-system/sql/setup_workbench_absolute.sql
-```
-
-To regenerate the local final-data bundle first:
+Generate a fresh local data bundle:
 
 ```bash
 python3 scripts/generate_data.py \
-  --source-dir /Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/εργασια/data \
-  --output-dir /Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data
+  --source-dir data_sources \
+  --output-dir hospital_dataset_bundle
 ```
 
-The generator now keeps clinical references synchronized: hospitalization KEN codes come from the active `ken.csv`, the ICD10-KEN map is filtered against that same KEN table, procedure events use valid procedure/place-type pairs, and drug/allergy/prescription rows use valid drug-substance references.
+The generated bundle contains portable relative paths. From inside the bundle root, run:
 
-## Documentation
+```bash
+mysql --local-infile=1 -u root -p < sql/setup.sql
+```
 
-- [SQL README](sql/README.md) explains the schema and load scripts.
-- [Generator README](scripts/README.md) explains the Python data pipeline.
-- [Project Review](docs/PROJECT_REVIEW.md) lists what was fixed and what is still missing.
-- [Improvements](docs/IMPROVEMENTS.md) tracks completed and remaining improvements.
+If the CSV files are copied into this repository under `data/reference` and `data/generated`, the same portable setup can be run from the project root:
 
-## Current Status
+```bash
+mysql --local-infile=1 -u root -p < sql/setup.sql
+```
 
-The project now has a clean structure, aligned schema/load scripts, synchronized generated data, business-rule triggers, workflow procedures, and reusable reporting views. The biggest remaining improvement is to add a final `sql/queries.sql` file with the required exercise queries.
+## Main SQL Logic
+
+- `personnel` stores common staff data; `doctor`, `nurse`, and `administrative_staff` store role-specific data.
+- `department`, `bed`, and `operating_place` describe hospital structure and resources.
+- `department_shift` and `shift_assignment` model daily 8-hour rosters.
+- `emergency_visit` supports triage priority and FIFO ordering within each urgency level.
+- `hospitalization` connects a patient, department, bed, ICD-10 diagnoses, KEN code, admission/discharge dates, and calculated cost.
+- `lab_test`, `procedure_event`, `procedure_participant`, and `prescription` model clinical work during hospitalization.
+- `patient_allergy`, `drug_active_substance`, and prescription triggers prevent unsafe drug orders.
+- `image_asset` and `entity_image` support the website-image requirement.
+
+Important business rules are enforced in SQL:
+
+- doctor supervision cannot be circular;
+- residents require a supervisor, and directors cannot have supervisors;
+- shift assignment limits, rest time, night-shift limits, and resident supervision are checked by triggers;
+- shift coverage is reported through `v_shift_coverage`;
+- beds and patients cannot be double-booked for overlapping hospitalizations;
+- prescriptions and procedures must fall inside the hospitalization period;
+- procedure rooms and chief surgeons cannot be double-booked;
+- procedure place type must match the procedure catalog;
+- administrative staff cannot participate in procedures;
+- hospitalization cost is calculated from KEN base cost, mean duration, and extra daily cost;
+- multi-table workflows such as admission and discharge run inside transactions.
+
+## Project Assumptions
+
+| Area | Assumption |
+| --- | --- |
+| RDBMS | The implementation targets MySQL/MariaDB with InnoDB tables. SQL `ENUM`, arrays, JSON, and XML are not used. |
+| Identifiers | AMKA values are stored as 11-character digit strings because leading zeroes must be preserved. |
+| Controlled values | Staff type, ranks, bed status, shift type, procedure category, and similar fields use `VARCHAR` plus `CHECK` constraints instead of SQL enum types. |
+| Patient gender | Patient gender is normalized to `MALE`, `FEMALE`, `OTHER`, or `UNKNOWN`. |
+| Reference data | ICD-10, KEN, medical procedure, and drug reference rows should come from the official files mentioned in the assignment whenever those files are available. |
+| Synthetic data | Operational rows such as patients, visits, hospitalizations, shifts, evaluations, and images are generated synthetically but are designed to satisfy the assignment query requirements. |
+| EMA drugs | If the EMA Article 57 workbook is not provided, the generator creates a clearly marked demo drug/substance fallback so allergy and prescription logic can still be tested. Final submission should replace it with EMA-derived data if required. |
+| Procedure cost/duration | Procedure codes and names come from the official procedure catalog. Standard duration and cost are deterministic estimates by category when the source workbook does not provide clean values for every row. |
+| KEN costing | Total hospitalization cost equals the KEN base cost plus extra daily cost only for days beyond the KEN mean duration. |
+| Emergency queue | Emergency visits are served by urgency level first, then FIFO by arrival timestamp for equal urgency. |
+| Shift coverage | Per-person shift constraints are enforced at insert/update time. Minimum team coverage per shift is generated by the data pipeline and checked through `v_shift_coverage` and `sql/validation.sql`. |
+| Images | `entity_image` is intentionally generic so images can be attached to departments, staff, patients, procedures, equipment, or future website entities without adding many nullable image columns. |
+
+## Data Generation
+
+The generator creates a deterministic dataset with enough rows for the requested queries. The current defaults generate:
+
+- more than 80 doctors;
+- 500 patients;
+- 1200 hospitalizations;
+- 15 departments;
+- 1000 prescriptions;
+- at least 10 operating/procedure places;
+- up to 500 procedure events, depending on room/staff availability;
+- 800 lab tests;
+- 1500 emergency visits.
+
+The data size can be changed without editing Python:
+
+```bash
+python3 scripts/generate_data.py \
+  --source-dir data_sources \
+  --output-dir hospital_dataset_bundle \
+  --patient-count 800 \
+  --hospitalization-count 2000 \
+  --prescription-count 1800
+```
+
+The generated bundle also contains `TABLE_TO_CSV_MAP.csv`, `QUERY_COVERAGE.csv`, `dataset_summary.json`, and portable `sql/install.sql`, `sql/load.sql`, and `sql/setup.sql` files.
+
+## Validation
+
+`sql/validation.sql` includes post-load checks for:
+
+- row counts;
+- missing hospitalization doctors;
+- bed/department mismatches;
+- overlapping bed or patient hospitalizations;
+- bed status inconsistencies;
+- prescription allergy conflicts;
+- prescription/procedure dates outside hospitalization;
+- procedure room overlaps;
+- incomplete shift coverage;
+- emergency timestamp and referral consistency.
+
+The problem-detection queries should return zero rows after a valid load.
+
+## Final Submission Checklist
+
+The assignment PDF asks for the following final structure:
+
+- `README.md`
+- `diagrams/er.pdf`
+- `diagrams/relational.pdf`
+- `sql/install.sql`
+- `sql/load.sql`
+- `sql/Q01.sql` through `sql/Q15.sql`
+- `sql/Q01_out.txt` through `sql/Q15_out.txt`
+- `docs/report.pdf`, including the required EXPLAIN / FORCE INDEX comparison for Q4 and Q6
+- optional `code/` folder if an application is submitted
+
+Current repository note: the portable install/load/setup scripts and validation logic are present, but the final per-query SQL/output files and the Q4/Q6 report material still need to be prepared for the exact submission format.
+
+## AI Assistance Note
+
+OpenAI Codex was used as an assistant for schema review, SQL hardening, validation-script expansion, and README cleanup. The project design, final verification, and submitted results should be reviewed by the team before delivery.

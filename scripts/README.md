@@ -17,22 +17,28 @@ The script:
 ## Main Command
 
 ```bash
-python3 scripts/generate_data.py --source-dir . --output-dir hospital_dataset_bundle
+python3 scripts/generate_data.py --source-dir data_sources --output-dir hospital_dataset_bundle
 ```
 
-Local exercise bundle:
+The `--source-dir` folder should contain the official ICD-10, KEN, procedure, and optional EMA files. The output bundle is portable: it contains relative paths only, so it can be moved to another laptop and loaded from its root folder.
 
 ```bash
 python3 scripts/generate_data.py \
-  --source-dir /Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/εργασια/data \
-  --output-dir /Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data
+  --source-dir data_sources \
+  --output-dir hospital_dataset_bundle \
+  --patient-count 500 \
+  --emergency-count 1500 \
+  --hospitalization-count 1200 \
+  --lab-test-count 800 \
+  --procedure-count 500 \
+  --prescription-count 1000
 ```
 
 Optional EMA Article 57 drug source:
 
 ```bash
 python3 scripts/generate_data.py \
-  --source-dir . \
+  --source-dir data_sources \
   --output-dir hospital_dataset_bundle \
   --ema-xlsx /path/to/article-57-product-data_en.xlsx
 ```
@@ -44,6 +50,7 @@ The output bundle contains:
 - `data/reference/`: cleaned or fallback reference CSVs;
 - `data/generated/`: synthetic transactional CSVs;
 - `sql/load.sql`: relative-path loader for MySQL;
+- `sql/setup.sql`: portable schema + load + validation runner;
 - `TABLE_TO_CSV_MAP.csv`: table-to-file mapping;
 - `QUERY_COVERAGE.csv`: notes explaining how generated data supports the exercise queries;
 - `dataset_summary.json`: row-count summary.
@@ -54,9 +61,11 @@ The output bundle contains:
 - KEN data comes from an improved/official source when available. Demo `DKEN...` rows are used only when no official KEN data can be found.
 - `icd10_ken_map.csv` is rebuilt from the official map when compatible with `ken.csv`; otherwise it is generated from the active KEN codes.
 - Procedure events are generated only from `procedure_catalog.csv`, with `place_id` chosen from a matching `operating_place.place_type`.
+- Procedure catalog codes/names come from the official procedure source; standard duration and cost are deterministic estimates by category when the source lacks clean values for every row.
+- Hospitalizations are generated without overlapping stays for the same patient or same bed.
 - Drug, active-substance, allergy, and prescription rows are validated against their reference CSVs before the bundle is accepted.
 - Drug/substance data can use EMA Article 57 if provided; otherwise the script creates demo drug data so allergy and prescription logic can still be tested.
-- The generated data is deterministic, so the same inputs and seed should produce the same result.
+- The generated data is deterministic, so the same inputs, seed, and count options should produce the same result.
 
 ## Recommended Use
 

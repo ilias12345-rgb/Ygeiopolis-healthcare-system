@@ -1,11 +1,9 @@
--- Robust generated loader with absolute local Mac paths for MySQL Workbench.
--- In Workbench, ensure OPT_LOCAL_INFILE / local_infile is enabled.
--- Paths point to the regenerated rdbms_final_data bundle whose reference and
--- generated CSV files are produced together by scripts/generate_data.py.
+-- Robust generated loader. Run from the bundle/project root.
+-- Example: mysql --local-infile=1 -u root -p < sql/load.sql
 USE yg_eupolis_hospital;
 SET FOREIGN_KEY_CHECKS = 1;
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/reference/icd10_diagnosis.csv'
+LOAD DATA LOCAL INFILE 'data/reference/icd10_diagnosis.csv'
 INTO TABLE icd10_diagnosis
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -13,7 +11,7 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (icd10_code, icd10_description);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/reference/ken.csv'
+LOAD DATA LOCAL INFILE 'data/reference/ken.csv'
 INTO TABLE ken
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -21,7 +19,7 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (ken_code, ken_description, basic_cost, mean_duration_days, extra_daily_cost);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/reference/icd10_ken_map.csv'
+LOAD DATA LOCAL INFILE 'data/reference/icd10_ken_map.csv'
 INTO TABLE icd10_ken_map
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -29,15 +27,15 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (mdc_code, ken_code, icd10_code_prefix);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/reference/procedure_catalog.csv'
+LOAD DATA LOCAL INFILE 'data/reference/procedure_catalog.csv'
 INTO TABLE procedure_catalog
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
 IGNORE 1 LINES
-(procedure_code, procedure_name, procedure_category, required_place_type);
+(procedure_code, procedure_name, procedure_category, required_place_type, standard_duration_min, standard_cost);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/reference/lab_test_catalog.csv'
+LOAD DATA LOCAL INFILE 'data/reference/lab_test_catalog.csv'
 INTO TABLE lab_test_catalog
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -45,7 +43,7 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (test_code, test_name, test_type);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/reference/drug.csv'
+LOAD DATA LOCAL INFILE 'data/reference/drug.csv'
 INTO TABLE drug
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -53,7 +51,7 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (drug_id, drug_name);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/reference/active_substance.csv'
+LOAD DATA LOCAL INFILE 'data/reference/active_substance.csv'
 INTO TABLE active_substance
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -61,7 +59,7 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (substance_id, substance_name);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/reference/drug_active_substance.csv'
+LOAD DATA LOCAL INFILE 'data/reference/drug_active_substance.csv'
 INTO TABLE drug_active_substance
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -69,7 +67,7 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (drug_id, substance_id);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/personnel.csv'
+LOAD DATA LOCAL INFILE 'data/generated/personnel.csv'
 INTO TABLE personnel
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -77,7 +75,7 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (amka, first_name, last_name, age, email, phone_number, hiring_date, personnel_type);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/doctor.csv'
+LOAD DATA LOCAL INFILE 'data/generated/doctor.csv'
 INTO TABLE doctor
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -91,7 +89,7 @@ SET
     doctor_rank = @doctor_rank,
     supervisor_amka = NULLIF(@supervisor_amka, '');
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/department.csv'
+LOAD DATA LOCAL INFILE 'data/generated/department.csv'
 INTO TABLE department
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -106,7 +104,7 @@ SET
     floor_building = @floor_building,
     manager_doctor_amka = NULLIF(@manager_doctor_amka, '');
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/doctor_department.csv'
+LOAD DATA LOCAL INFILE 'data/generated/doctor_department.csv'
 INTO TABLE doctor_department
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -114,7 +112,7 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (doctor_amka, department_id);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/nurse.csv'
+LOAD DATA LOCAL INFILE 'data/generated/nurse.csv'
 INTO TABLE nurse
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -122,7 +120,7 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (amka, nurse_rank, department_id);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/administrative_staff.csv'
+LOAD DATA LOCAL INFILE 'data/generated/administrative_staff.csv'
 INTO TABLE administrative_staff
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -130,7 +128,7 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (amka, admin_role, office_work, department_id);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/bed.csv'
+LOAD DATA LOCAL INFILE 'data/generated/bed.csv'
 INTO TABLE bed
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -138,7 +136,7 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (bed_id, department_id, bed_number, bed_type, bed_status);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/operating_place.csv'
+LOAD DATA LOCAL INFILE 'data/generated/operating_place.csv'
 INTO TABLE operating_place
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -146,7 +144,7 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (place_id, place_name, place_type, place_status);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/patient.csv'
+LOAD DATA LOCAL INFILE 'data/generated/patient.csv'
 INTO TABLE patient
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -169,7 +167,7 @@ SET
     nationality = NULLIF(@nationality, ''),
     insurance_provider = @insurance_provider;
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/emergency_contact.csv'
+LOAD DATA LOCAL INFILE 'data/generated/emergency_contact.csv'
 INTO TABLE emergency_contact
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -183,7 +181,7 @@ SET
     phone_number = @phone_number,
     email = NULLIF(@email, '');
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/department_shift.csv'
+LOAD DATA LOCAL INFILE 'data/generated/department_shift.csv'
 INTO TABLE department_shift
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -191,7 +189,7 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (shift_id, department_id, shift_date, shift_type, start_time, end_time);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/shift_assignment.csv'
+LOAD DATA LOCAL INFILE 'data/generated/shift_assignment.csv'
 INTO TABLE shift_assignment
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -203,7 +201,7 @@ SET
     personnel_amka = @personnel_amka,
     assigned_role = NULLIF(@assigned_role, '');
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/emergency_visit.csv'
+LOAD DATA LOCAL INFILE 'data/generated/emergency_visit.csv'
 INTO TABLE emergency_visit
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -223,7 +221,7 @@ SET
     referred_department_id = NULLIF(@referred_department_id, ''),
     discharge_instructions = NULLIF(@discharge_instructions, '');
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/hospitalization.csv'
+LOAD DATA LOCAL INFILE 'data/generated/hospitalization.csv'
 INTO TABLE hospitalization
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -243,7 +241,7 @@ SET
     discharge_icd10_code = NULLIF(@discharge_icd10_code, ''),
     total_cost = @total_cost;
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/hospitalization_doctor.csv'
+LOAD DATA LOCAL INFILE 'data/generated/hospitalization_doctor.csv'
 INTO TABLE hospitalization_doctor
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -251,7 +249,7 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (hosp_id, doctor_amka, doctor_role, is_primary);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/lab_test.csv'
+LOAD DATA LOCAL INFILE 'data/generated/lab_test.csv'
 INTO TABLE lab_test
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -269,7 +267,7 @@ SET
     result_unit = NULLIF(@result_unit, ''),
     cost = @cost;
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/procedure_event.csv'
+LOAD DATA LOCAL INFILE 'data/generated/procedure_event.csv'
 INTO TABLE procedure_event
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -277,7 +275,7 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (procedure_event_id, hosp_id, procedure_code, place_id, chief_surgeon_amka, start_ts, end_ts, actual_duration_min);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/procedure_participant.csv'
+LOAD DATA LOCAL INFILE 'data/generated/procedure_participant.csv'
 INTO TABLE procedure_participant
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -285,7 +283,7 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (procedure_event_id, personnel_amka, participant_role);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/patient_allergy.csv'
+LOAD DATA LOCAL INFILE 'data/generated/patient_allergy.csv'
 INTO TABLE patient_allergy
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -293,7 +291,7 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (patient_amka, substance_id);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/prescription.csv'
+LOAD DATA LOCAL INFILE 'data/generated/prescription.csv'
 INTO TABLE prescription
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -311,7 +309,7 @@ SET
     start_datetime = @start_datetime,
     end_datetime = NULLIF(@end_datetime, '');
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/hospitalization_evaluation.csv'
+LOAD DATA LOCAL INFILE 'data/generated/hospitalization_evaluation.csv'
 INTO TABLE hospitalization_evaluation
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -328,7 +326,7 @@ SET
     overall_experience_score = @overall_experience_score,
     comments = NULLIF(@comments, '');
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/image_asset.csv'
+LOAD DATA LOCAL INFILE 'data/generated/image_asset.csv'
 INTO TABLE image_asset
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
@@ -336,7 +334,7 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (image_id, image_url, alt_text);
 
-LOAD DATA LOCAL INFILE '/Users/euangeloseuangelou/Desktop/sxoli/6_εξάμηνο/rdbms1/rdbms_final_data/data/generated/entity_image.csv'
+LOAD DATA LOCAL INFILE 'data/generated/entity_image.csv'
 INTO TABLE entity_image
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
