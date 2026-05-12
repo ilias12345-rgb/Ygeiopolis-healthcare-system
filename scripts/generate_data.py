@@ -1919,7 +1919,7 @@ def main():
         ("validation.sql", bundle_dir / "sql" / "validation.sql"),
     ]
     setup_lines = [
-        "-- Portable full setup script. Run from the generated bundle root:",
+        "-- Portable full setup script. Run from the project or generated bundle root:",
         "-- mysql --local-infile=1 -u root -p < sql/setup.sql",
         "--",
         "-- The relative LOAD DATA paths in this file expect:",
