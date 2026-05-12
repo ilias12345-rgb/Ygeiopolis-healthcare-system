@@ -3,3 +3,5 @@ numpy
 openpyxl
 xlrd
 python-docx
+streamlit
+mysql-connector-python

@@ -6,10 +6,10 @@ This folder contains the database-facing part of the Ygeiopolis Healthcare Syste
 
 - `install.sql`: portable entrypoint for creating the schema.
 - `schema.sql`: creates the `yg_eupolis_hospital` database, tables, constraints, indexes, views, triggers, and stored procedures.
-- `DB_ygeiopolis_new2.sql`: the vol2 schema source kept for clarity; `schema.sql` and `install.sql` currently match it.
 - `load.sql`: portable relative-path loader for generated CSV data under `data/reference` and `data/generated`.
 - `setup.sql`: portable schema + load + validation script. Run it from the project or generated bundle root.
 - `validation.sql`: sanity checks to run after loading data.
+- `Q01.sql` through `Q15.sql`: placeholders for the final assignment queries.
 
 ## Execution Order
 

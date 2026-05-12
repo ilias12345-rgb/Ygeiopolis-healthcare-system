@@ -2,30 +2,29 @@
 
 Relational database project for the General Hospital "Ygeiopolis" semester assignment, academic year 2025-2026.
 
-The database models hospital departments, staff, shifts, emergency triage, patients, hospitalizations, diagnoses, KEN costing, lab tests, procedures, prescriptions, allergies, evaluations, and image metadata. The current main schema is the Ygeiopolis vol2 design in `sql/schema.sql` / `sql/DB_ygeiopolis_new2.sql`, implemented with primary keys, foreign keys, unique constraints, domain checks, indexes, views, triggers, and stored procedures.
+The database models hospital departments, staff, shifts, emergency triage, patients, hospitalizations, diagnoses, KEN costing, lab tests, procedures, prescriptions, allergies, evaluations, and image metadata. The current main schema is the Ygeiopolis vol2 design in `sql/schema.sql`, implemented with primary keys, foreign keys, unique constraints, domain checks, indexes, views, triggers, and stored procedures.
 
 ## Repository Structure
 
 ```text
 .
-├── assets/
-│   └── er_diagram.png
+├── diagrams/
+│   ├── er_diagram.png
+│   └── schema.pdf
 ├── docs/
-│   ├── exercise-brief-2025-2026.pdf
-│   ├── schema.pdf
-│   ├── PROJECT_REVIEW.md
-│   └── IMPROVEMENTS.md
+│   └── exercise-brief-2025-2026.pdf
 ├── scripts/
 │   ├── generate_data.py
 │   └── README.md
 ├── sql/
 │   ├── install.sql
 │   ├── schema.sql
-│   ├── DB_ygeiopolis_new2.sql
 │   ├── setup.sql
 │   ├── load.sql
 │   ├── validation.sql
+│   ├── Q01.sql ... Q15.sql
 │   └── README.md
+├── streamlit_app.py
 └── README.md
 ```
 
@@ -207,6 +206,24 @@ The repository itself does not store generated CSV data by default. If `data/ref
 mysql --local-infile=1 -u root -p < sql/setup.sql
 ```
 
+## Optional Streamlit UI
+
+A small Streamlit helper is included for local demonstrations. It can run `sql/setup.sql`, edit/save the `Q01.sql` to `Q15.sql` query files, and execute queries against the loaded MySQL database.
+
+Install requirements first, then run:
+
+```bash
+streamlit run streamlit_app.py
+```
+
+Windows alternative:
+
+```powershell
+py -3 -m streamlit run streamlit_app.py
+```
+
+The Streamlit app is optional. The database can always be installed and queried directly from the terminal using the SQL scripts above.
+
 ## Main SQL Logic
 
 - `personnel` stores common staff data; `doctor`, `nurse`, and `administrative_staff` store role-specific data.
@@ -298,13 +315,13 @@ The problem-detection queries should return zero rows after a valid load.
 The assignment PDF asks for the following final structure:
 
 - `README.md`
-- `diagrams/er.pdf`
-- `diagrams/relational.pdf`
+- `diagrams/er_diagram.png`
+- `diagrams/schema.pdf`
 - `sql/install.sql`
 - `sql/load.sql`
 - `sql/Q01.sql` through `sql/Q15.sql`
 - `sql/Q01_out.txt` through `sql/Q15_out.txt`
 - `docs/report.pdf`, including the required EXPLAIN / FORCE INDEX comparison for Q4 and Q6
-- optional `code/` folder if an application is submitted
+- optional `streamlit_app.py` if an application/demo UI is submitted
 
 Current repository note: the portable install/load/setup scripts and validation logic are present, but the final per-query SQL/output files and the Q4/Q6 report material still need to be prepared for the exact submission format.
