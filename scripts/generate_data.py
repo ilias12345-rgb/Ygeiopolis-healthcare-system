@@ -29,6 +29,7 @@ except Exception:
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
+DATASET_AS_OF_TS = datetime(2026, 5, 12, 12, 0, 0)
 
 DEPARTMENT_SPECS = [
     ("Cardiology", "CARDIOLOGY"),
@@ -575,7 +576,10 @@ def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | No
         "standard_duration_min",
         "standard_cost",
     ]]
-    proc.to_csv(out_ref_dir / "procedure_catalog.csv", index=False)
+    proc[["procedure_code", "procedure_name", "procedure_category", "required_place_type"]].to_csv(
+        out_ref_dir / "procedure_catalog.csv",
+        index=False,
+    )
 
     # Lab test catalog derived from official procedure file
     lab = proc[proc["procedure_category"] == "DIAGNOSTIC"].copy()
@@ -836,16 +840,17 @@ def build_people_and_org(gen_dir: Path):
         })
     operating_place_df = pd.DataFrame(operating_places)
 
-    for name, df in {
+    output_frames = {
         "department": department_df,
         "personnel": personnel_df,
         "doctor": doctor_df,
         "doctor_department": doctor_department_df,
         "nurse": nurse_df,
         "administrative_staff": admin_df,
-        "bed": bed_df,
+        "bed": bed_df[["bed_id", "department_id", "bed_type", "bed_status"]],
         "operating_place": operating_place_df,
-    }.items():
+    }
+    for name, df in output_frames.items():
         df.to_csv(gen_dir / f"{name}.csv", index=False)
 
     return {
@@ -954,6 +959,7 @@ def build_shifts(gen_dir: Path, org):
                     "shift_type": stype,
                     "start_time": start_time,
                     "end_time": end_time,
+                    "shift_status": "PROCESSING",
                 })
                 # doctors: one senior, one mid, one remaining not yet used in day
                 doc_candidates = []
@@ -1016,6 +1022,7 @@ def build_emergency_visits(gen_dir: Path, patients, org, count=1500):
             4: random.randint(20, 120),
             5: random.randint(30, 180),
         }[level]
+        is_waiting = random.random() < 0.15
         service_start = arrival + timedelta(minutes=wait_minutes)
         service_end = service_start + timedelta(minutes=random.randint(20, 180))
         hospitalized = random.random() < {1: 0.92, 2: 0.74, 3: 0.48, 4: 0.22, 5: 0.08}[level]
@@ -1027,11 +1034,11 @@ def build_emergency_visits(gen_dir: Path, patients, org, count=1500):
             "arrival_ts": arrival.strftime("%Y-%m-%d %H:%M:%S"),
             "symptoms": pick(SYMPTOMS_BY_LEVEL[level]),
             "emergency_level": level,
-            "service_start_ts": service_start.strftime("%Y-%m-%d %H:%M:%S"),
-            "service_end_ts": service_end.strftime("%Y-%m-%d %H:%M:%S"),
+            "service_start_ts": "" if is_waiting else service_start.strftime("%Y-%m-%d %H:%M:%S"),
             "disposition": "HOSPITALIZED" if hospitalized else "DISCHARGED",
             "referred_department_id": referred_dep,
             "discharge_instructions": "" if hospitalized else "Rest, hydration, and outpatient follow-up",
+            "status": "WAITING" if is_waiting else "CALLED",
         })
         visit_id += 1
 
@@ -1189,7 +1196,6 @@ def build_clinical_events(
             "patient_amka": patient_amka,
             "department_id": department_id,
             "bed_id": bed_id,
-            "emergency_visit_id": "",
             "ken_code": ken_code,
             "admission_ts": admission_ts.strftime("%Y-%m-%d %H:%M:%S"),
             "discharge_ts": discharge_ts.strftime("%Y-%m-%d %H:%M:%S"),
@@ -1200,10 +1206,10 @@ def build_clinical_events(
         # doctors
         dep_docs = docs_by_dep[int(department_id)]
         primary = pick([d["amka"] for d in dep_docs if d["rank"] in ("DIRECTOR","CONSULTANT_A","CONSULTANT_B")])
-        hosp_doctor_rows.append({"hosp_id": hosp_id, "doctor_amka": primary, "doctor_role": "PRIMARY", "is_primary": 1})
+        hosp_doctor_rows.append({"hosp_id": hosp_id, "doctor_amka": primary})
         others = random.sample([d["amka"] for d in dep_docs if d["amka"] != primary], k=random.randint(0,2))
         for od in others:
-            hosp_doctor_rows.append({"hosp_id": hosp_id, "doctor_amka": od, "doctor_role": "CONSULTING", "is_primary": 0})
+            hosp_doctor_rows.append({"hosp_id": hosp_id, "doctor_amka": od})
         # evaluation on most discharges
         if random.random() < 0.74:
             eval_rows.append({
@@ -1292,9 +1298,6 @@ def build_clinical_events(
             "ordered_by_doctor_amka": ordered_by,
             "test_datetime": test_dt.strftime("%Y-%m-%d %H:%M:%S"),
             "result_text": pick(["Normal", "Mildly abnormal", "Follow-up required", "Improved from previous"]),
-            "result_numeric": result_numeric,
-            "result_unit": result_unit,
-            "cost": round(random.uniform(12.0, 180.0), 2),
         })
         test_id += 1
     lab_df = pd.DataFrame(lab_rows)
@@ -1365,11 +1368,11 @@ def build_clinical_events(
                 if staff_is_available(amka, start_ts, end_ts)
             ]
             for helper in random.sample(dep_doc_pool, k=min(len(dep_doc_pool), random.randint(1, 2))):
-                proc_part_rows.append({"procedure_event_id": proc_event_id, "personnel_amka": helper, "participant_role": "ASSISTANT_DOCTOR"})
+                proc_part_rows.append({"procedure_event_id": proc_event_id, "personnel_amka": helper})
                 staff_schedules[helper].append((start_ts, end_ts))
             if dep_nurse_pool:
                 nurse_helper = pick(dep_nurse_pool)
-                proc_part_rows.append({"procedure_event_id": proc_event_id, "personnel_amka": nurse_helper, "participant_role": "SCRUB_NURSE"})
+                proc_part_rows.append({"procedure_event_id": proc_event_id, "personnel_amka": nurse_helper})
                 staff_schedules[nurse_helper].append((start_ts, end_ts))
             proc_event_id += 1
             placed = True
@@ -1379,6 +1382,25 @@ def build_clinical_events(
 
     proc_event_df = pd.DataFrame(proc_event_rows)
     proc_part_df = pd.DataFrame(proc_part_rows).drop_duplicates()
+
+    # Keep the loaded bed table consistent with the dataset validation date.
+    # Historic hospitalizations do not change current bed status, but active
+    # hospitalizations at DATASET_AS_OF_TS should be reflected as occupied.
+    active_bed_ids = set(
+        hosp_df.loc[
+            (pd.to_datetime(hosp_df["admission_ts"]) <= DATASET_AS_OF_TS)
+            & (pd.to_datetime(hosp_df["discharge_ts"]) > DATASET_AS_OF_TS),
+            "bed_id",
+        ]
+    )
+    bed_status_df = org["bed"].copy()
+    bed_status_df.loc[bed_status_df["bed_id"].isin(active_bed_ids), "bed_status"] = "OCCUPIED"
+    bed_status_df.loc[
+        (~bed_status_df["bed_id"].isin(active_bed_ids)) & (bed_status_df["bed_status"] == "OCCUPIED"),
+        "bed_status",
+    ] = "AVAILABLE"
+    bed_status_df[["bed_id", "department_id", "bed_type", "bed_status"]].to_csv(gen_dir / "bed.csv", index=False)
+    org["bed"] = bed_status_df
 
     # Allergies
     substances = ref["active_substance"].copy()
@@ -1630,8 +1652,7 @@ def write_load_sql(bundle_dir: Path):
 
     load_lines += block('data/reference/icd10_diagnosis.csv', 'icd10_diagnosis', ['icd10_code','icd10_description'])
     load_lines += block('data/reference/ken.csv', 'ken', ['ken_code','ken_description','basic_cost','mean_duration_days','extra_daily_cost'])
-    load_lines += block('data/reference/icd10_ken_map.csv', 'icd10_ken_map', ['mdc_code','ken_code','icd10_code_prefix'])
-    load_lines += block('data/reference/procedure_catalog.csv', 'procedure_catalog', ['procedure_code','procedure_name','procedure_category','required_place_type','standard_duration_min','standard_cost'])
+    load_lines += block('data/reference/procedure_catalog.csv', 'procedure_catalog', ['procedure_code','procedure_name','procedure_category','required_place_type'])
     load_lines += block('data/reference/lab_test_catalog.csv', 'lab_test_catalog', ['test_code','test_name','test_type'])
     load_lines += block('data/reference/drug.csv', 'drug', ['drug_id','drug_name'])
     load_lines += block('data/reference/active_substance.csv', 'active_substance', ['substance_id','substance_name'])
@@ -1657,7 +1678,7 @@ def write_load_sql(bundle_dir: Path):
     load_lines += block('data/generated/doctor_department.csv', 'doctor_department', ['doctor_amka','department_id'])
     load_lines += block('data/generated/nurse.csv', 'nurse', ['amka','nurse_rank','department_id'])
     load_lines += block('data/generated/administrative_staff.csv', 'administrative_staff', ['amka','admin_role','office_work','department_id'])
-    load_lines += block('data/generated/bed.csv', 'bed', ['bed_id','department_id','bed_number','bed_type','bed_status'])
+    load_lines += block('data/generated/bed.csv', 'bed', ['bed_id','department_id','bed_type','bed_status'])
     load_lines += block('data/generated/operating_place.csv', 'operating_place', ['place_id','place_name','place_type','place_status'])
     load_lines += block('data/generated/patient.csv', 'patient', ['@patient_amka','@first_name','@last_name','@father_name','@age','@gender','@weight_kg','@height_cm','@address_line','@phone_number','@email','@profession','@nationality','@insurance_provider'], [
         "patient_amka = @patient_amka",
@@ -1682,13 +1703,21 @@ def write_load_sql(bundle_dir: Path):
         "phone_number = @phone_number",
         "email = NULLIF(@email, '')",
     ])
-    load_lines += block('data/generated/department_shift.csv', 'department_shift', ['shift_id','department_id','shift_date','shift_type','start_time','end_time'])
+    load_lines += block('data/generated/department_shift.csv', 'department_shift', ['shift_id','department_id','shift_date','shift_type','start_time','end_time','shift_status'])
     load_lines += block('data/generated/shift_assignment.csv', 'shift_assignment', ['@shift_id','@personnel_amka','@assigned_role'], [
         "shift_id = @shift_id",
         "personnel_amka = @personnel_amka",
         "assigned_role = NULLIF(@assigned_role, '')",
     ])
-    load_lines += block('data/generated/emergency_visit.csv', 'emergency_visit', ['@visit_id','@patient_amka','@triage_nurse_amka','@arrival_ts','@symptoms','@emergency_level','@service_start_ts','@service_end_ts','@disposition','@referred_department_id','@discharge_instructions'], [
+    load_lines += [
+        "-- Mark shifts as valid only after all staff assignments have loaded.",
+        "-- This activates the vol2 shift-composition and resident-supervisor checks.",
+        "UPDATE department_shift",
+        "SET shift_status = 'VALID'",
+        "WHERE shift_status = 'PROCESSING';",
+        "",
+    ]
+    load_lines += block('data/generated/emergency_visit.csv', 'emergency_visit', ['@visit_id','@patient_amka','@triage_nurse_amka','@arrival_ts','@symptoms','@emergency_level','@service_start_ts','@disposition','@referred_department_id','@discharge_instructions','@status'], [
         "visit_id = @visit_id",
         "patient_amka = @patient_amka",
         "triage_nurse_amka = @triage_nurse_amka",
@@ -1696,17 +1725,16 @@ def write_load_sql(bundle_dir: Path):
         "symptoms = @symptoms",
         "emergency_level = @emergency_level",
         "service_start_ts = NULLIF(@service_start_ts, '')",
-        "service_end_ts = NULLIF(@service_end_ts, '')",
         "disposition = @disposition",
         "referred_department_id = NULLIF(@referred_department_id, '')",
         "discharge_instructions = NULLIF(@discharge_instructions, '')",
+        "status = NULLIF(@status, '')",
     ])
-    load_lines += block('data/generated/hospitalization.csv', 'hospitalization', ['@hosp_id','@patient_amka','@department_id','@bed_id','@emergency_visit_id','@ken_code','@admission_ts','@discharge_ts','@admission_icd10_code','@discharge_icd10_code','@total_cost'], [
+    load_lines += block('data/generated/hospitalization.csv', 'hospitalization', ['@hosp_id','@patient_amka','@department_id','@bed_id','@ken_code','@admission_ts','@discharge_ts','@admission_icd10_code','@discharge_icd10_code','@total_cost'], [
         "hosp_id = @hosp_id",
         "patient_amka = @patient_amka",
         "department_id = @department_id",
         "bed_id = @bed_id",
-        "emergency_visit_id = NULLIF(@emergency_visit_id, '')",
         "ken_code = @ken_code",
         "admission_ts = @admission_ts",
         "discharge_ts = NULLIF(@discharge_ts, '')",
@@ -1714,20 +1742,17 @@ def write_load_sql(bundle_dir: Path):
         "discharge_icd10_code = NULLIF(@discharge_icd10_code, '')",
         "total_cost = @total_cost",
     ])
-    load_lines += block('data/generated/hospitalization_doctor.csv', 'hospitalization_doctor', ['hosp_id','doctor_amka','doctor_role','is_primary'])
-    load_lines += block('data/generated/lab_test.csv', 'lab_test', ['@test_id','@hosp_id','@test_code','@ordered_by_doctor_amka','@test_datetime','@result_text','@result_numeric','@result_unit','@cost'], [
+    load_lines += block('data/generated/hospitalization_doctor.csv', 'hospitalization_doctor', ['hosp_id','doctor_amka'])
+    load_lines += block('data/generated/lab_test.csv', 'lab_test', ['@test_id','@hosp_id','@test_code','@ordered_by_doctor_amka','@test_datetime','@result_text'], [
         "test_id = @test_id",
         "hosp_id = @hosp_id",
         "test_code = @test_code",
         "ordered_by_doctor_amka = @ordered_by_doctor_amka",
         "test_datetime = @test_datetime",
         "result_text = NULLIF(@result_text, '')",
-        "result_numeric = NULLIF(@result_numeric, '')",
-        "result_unit = NULLIF(@result_unit, '')",
-        "cost = @cost",
     ])
     load_lines += block('data/generated/procedure_event.csv', 'procedure_event', ['procedure_event_id','hosp_id','procedure_code','place_id','chief_surgeon_amka','start_ts','end_ts','actual_duration_min'])
-    load_lines += block('data/generated/procedure_participant.csv', 'procedure_participant', ['procedure_event_id','personnel_amka','participant_role'])
+    load_lines += block('data/generated/procedure_participant.csv', 'procedure_participant', ['procedure_event_id','personnel_amka'])
     load_lines += block('data/generated/patient_allergy.csv', 'patient_allergy', ['patient_amka','substance_id'])
     load_lines += block('data/generated/prescription.csv', 'prescription', ['@prescription_id','@hosp_id','@patient_amka','@doctor_amka','@drug_id','@dosage','@frequency','@start_datetime','@end_datetime'], [
         "prescription_id = @prescription_id",
@@ -1759,18 +1784,6 @@ def write_load_sql(bundle_dir: Path):
     ])
 
     (sql_dir / "load.sql").write_text("\n".join(load_lines), encoding="utf-8")
-    (sql_dir / "setup.sql").write_text(
-        "\n".join([
-            "-- Portable setup script. Run from the generated bundle root:",
-            "-- mysql --local-infile=1 -u root -p < sql/setup.sql",
-            "",
-            "SOURCE sql/install.sql;",
-            "SOURCE sql/load.sql;",
-            "SOURCE sql/validation.sql;",
-            "",
-        ]),
-        encoding="utf-8",
-    )
 
 def write_guides(bundle_dir: Path, ref, generated):
     # table map
@@ -1816,16 +1829,16 @@ This bundle contains:
 
 ## Important schema assumptions
 
-This dataset targets the **intended final schema**, with the following minimal clarifications so the data load stays coherent:
+This dataset targets the **Ygeiopolis vol2 schema**, with the following minimal clarifications so the data load stays coherent:
 
 1. `nurse` uses `nurse_rank` (not `degree`).
-2. `bed` includes `bed_number`, unique per department.
-3. `emergency_visit` includes `referred_department_id`.
-4. `hospitalization_doctor` includes `doctor_role` and `is_primary`.
-5. `procedure_participant` includes `participant_role`.
+2. `department_shift` is generated as `PROCESSING` and the loader marks it `VALID` after staff assignments load, so the vol2 shift procedures validate coverage.
+3. `emergency_visit` includes `referred_department_id` and the vol2 `status` field.
+4. `hospitalization_doctor` stores the doctor link only, matching vol2.
+5. `procedure_participant` stores the participant link only, matching vol2.
 6. `ken.csv` uses the improved/official KEN export when available; demo KEN rows are used only as a last-resort fallback.
 7. If the official EMA Article 57 workbook is not supplied, the generator falls back to a clearly marked **demo drug dataset** so Q7/Q10 can still be tested end-to-end.
-8. Procedure codes and names come from the official procedure catalog; standard duration/cost are deterministic estimates derived by procedure category because the source workbook does not provide clean cost fields for every row.
+8. Procedure codes and names come from the official procedure catalog; vol2 keeps category and required place type in the loaded table.
 
 ## Name mapping logic
 
@@ -1900,6 +1913,25 @@ def main():
         target_sql = bundle_dir / "sql" / sql_name
         if source_sql.exists() and source_sql.resolve() != target_sql.resolve():
             shutil.copy2(source_sql, target_sql)
+    setup_parts = [
+        ("install.sql", bundle_dir / "sql" / "install.sql"),
+        ("load.sql", bundle_dir / "sql" / "load.sql"),
+        ("validation.sql", bundle_dir / "sql" / "validation.sql"),
+    ]
+    setup_lines = [
+        "-- Portable full setup script. Run from the generated bundle root:",
+        "-- mysql --local-infile=1 -u root -p < sql/setup.sql",
+        "--",
+        "-- The relative LOAD DATA paths in this file expect:",
+        "-- data/reference/*.csv",
+        "-- data/generated/*.csv",
+        "",
+    ]
+    for label, path in setup_parts:
+        setup_lines.append(f"-- === {label} ===")
+        setup_lines.append(path.read_text(encoding="utf-8").rstrip())
+        setup_lines.append("")
+    (bundle_dir / "sql" / "setup.sql").write_text("\n".join(setup_lines), encoding="utf-8")
     write_guides(bundle_dir, ref, {**org, **patients, **shifts, **emergencies, **clinical})
     target_script = bundle_dir / "scripts" / "generate_data.py"
     if script_path.resolve() != target_script.resolve():

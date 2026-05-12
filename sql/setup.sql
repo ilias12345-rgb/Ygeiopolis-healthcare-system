@@ -1,10 +1,1841 @@
--- Portable setup script. Run from the project or generated bundle root:
+-- Portable full setup script. Run from the project or generated bundle root:
 -- mysql --local-infile=1 -u root -p < sql/setup.sql
 --
--- The relative LOAD DATA paths in sql/load.sql expect this structure:
+-- The relative LOAD DATA paths in this file expect:
 -- data/reference/*.csv
 -- data/generated/*.csv
 
-SOURCE sql/install.sql;
-SOURCE sql/load.sql;
-SOURCE sql/validation.sql;
+-- === install.sql ===
+DROP DATABASE IF EXISTS yg_eupolis_hospital;
+CREATE DATABASE yg_eupolis_hospital
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+USE yg_eupolis_hospital;
+
+SET FOREIGN_KEY_CHECKS = 0;
+
+DROP TABLE IF EXISTS entity_image;
+DROP TABLE IF EXISTS image_asset;
+DROP TABLE IF EXISTS hospitalization_evaluation;
+DROP TABLE IF EXISTS prescription;
+DROP TABLE IF EXISTS patient_allergy;
+DROP TABLE IF EXISTS drug_active_substance;
+DROP TABLE IF EXISTS active_substance;
+DROP TABLE IF EXISTS drug;
+DROP TABLE IF EXISTS procedure_participant;
+DROP TABLE IF EXISTS procedure_event;
+DROP TABLE IF EXISTS procedure_catalog;
+DROP TABLE IF EXISTS lab_test;
+DROP TABLE IF EXISTS lab_test_catalog;
+DROP TABLE IF EXISTS hospitalization_doctor;
+DROP TABLE IF EXISTS hospitalization;
+DROP TABLE IF EXISTS emergency_visit;
+DROP TABLE IF EXISTS shift_assignment;
+DROP TABLE IF EXISTS department_shift;
+DROP TABLE IF EXISTS operating_place;
+DROP TABLE IF EXISTS ken;
+DROP TABLE IF EXISTS icd10_diagnosis;
+DROP TABLE IF EXISTS emergency_contact;
+DROP TABLE IF EXISTS bed;
+DROP TABLE IF EXISTS doctor_department;
+DROP TABLE IF EXISTS administrative_staff;
+DROP TABLE IF EXISTS nurse;
+DROP TABLE IF EXISTS doctor;
+DROP TABLE IF EXISTS patient;
+DROP TABLE IF EXISTS department;
+DROP TABLE IF EXISTS personnel;
+
+SET FOREIGN_KEY_CHECKS = 1;
+
+CREATE TABLE personnel (
+    amka                    CHAR(11) PRIMARY KEY,
+    first_name              VARCHAR(80) NOT NULL,
+    last_name               VARCHAR(80) NOT NULL,
+    age                     INT NOT NULL,
+    email                   VARCHAR(255) NOT NULL,
+    phone_number            VARCHAR(30) NOT NULL,
+    hiring_date             DATE NOT NULL,
+    personnel_type          VARCHAR(20) NOT NULL,
+    CONSTRAINT uq_personnel_email UNIQUE (email),
+    CONSTRAINT ck_personnel_age CHECK (age BETWEEN 18 AND 100),
+    CONSTRAINT ck_personnel_type CHECK (personnel_type IN ('DOCTOR', 'NURSE', 'ADMIN'))
+);
+
+CREATE TABLE doctor (
+    amka                    CHAR(11) PRIMARY KEY,
+    license_number          VARCHAR(50) NOT NULL,
+    specialization          VARCHAR(120) NOT NULL,
+    doctor_rank             VARCHAR(20) NOT NULL,
+    supervisor_amka         CHAR(11) NULL,
+    CONSTRAINT fk_doctor_personnel
+        FOREIGN KEY (amka) REFERENCES personnel(amka)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_doctor_supervisor
+        FOREIGN KEY (supervisor_amka) REFERENCES doctor(amka)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT uq_doctor_license UNIQUE (license_number),
+    CONSTRAINT ck_doctor_rank CHECK (doctor_rank IN ('RESIDENT', 'CONSULTANT_B', 'CONSULTANT_A', 'DIRECTOR'))
+);
+
+CREATE TABLE department (
+    department_id           INT AUTO_INCREMENT PRIMARY KEY,
+    department_name         VARCHAR(120) NOT NULL,
+    description             TEXT NULL,
+    bed_capacity            INT NOT NULL,
+    floor_building          VARCHAR(120) NOT NULL,
+    manager_doctor_amka     CHAR(11) NULL,
+    CONSTRAINT uq_department_name UNIQUE (department_name),
+    CONSTRAINT ck_department_bed_capacity CHECK (bed_capacity >= 0),
+    CONSTRAINT fk_department_manager
+    FOREIGN KEY (manager_doctor_amka) REFERENCES doctor(amka)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE,
+    CONSTRAINT uq_department_manager UNIQUE (manager_doctor_amka)
+);
+
+CREATE TABLE nurse (
+    amka                    CHAR(11) PRIMARY KEY,
+    nurse_rank              VARCHAR(20) NOT NULL,
+    department_id           INT NOT NULL,
+    CONSTRAINT fk_nurse_personnel
+        FOREIGN KEY (amka) REFERENCES personnel(amka)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_nurse_department
+        FOREIGN KEY (department_id) REFERENCES department(department_id)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT ck_nurse_rank CHECK (nurse_rank IN ('ASSISTANT_NURSE', 'NURSE', 'HEAD_NURSE'))
+);
+
+CREATE TABLE administrative_staff (
+    amka                    CHAR(11) PRIMARY KEY,
+    admin_role              VARCHAR(120) NOT NULL,
+    office_work             VARCHAR(120) NOT NULL,
+    department_id           INT NOT NULL,
+    CONSTRAINT fk_admin_personnel
+        FOREIGN KEY (amka) REFERENCES personnel(amka)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_admin_department
+        FOREIGN KEY (department_id) REFERENCES department(department_id)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE
+);
+
+
+CREATE TABLE doctor_department (
+    doctor_amka             CHAR(11) NOT NULL,
+    department_id           INT NOT NULL,
+    PRIMARY KEY (doctor_amka, department_id),
+    CONSTRAINT fk_doctor_department_doctor
+        FOREIGN KEY (doctor_amka) REFERENCES doctor(amka)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_doctor_department_department
+        FOREIGN KEY (department_id) REFERENCES department(department_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+);
+
+CREATE TABLE bed (
+    bed_id                   INT AUTO_INCREMENT PRIMARY KEY,
+    department_id            INT NOT NULL,
+    bed_type                 VARCHAR(20) NOT NULL,
+    bed_status               VARCHAR(20) NOT NULL,
+    CONSTRAINT fk_bed_department
+        FOREIGN KEY (department_id) REFERENCES department(department_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT ck_bed_type CHECK (bed_type IN ('ICU', 'SINGLE', 'MULTI_BED')),
+    CONSTRAINT ck_bed_status CHECK (bed_status IN ('AVAILABLE', 'OCCUPIED', 'MAINTENANCE'))
+);
+
+CREATE TABLE patient (
+    patient_amka            CHAR(11) PRIMARY KEY,
+    first_name              VARCHAR(80) NOT NULL,
+    last_name               VARCHAR(80) NOT NULL,
+    father_name             VARCHAR(80) NOT NULL,
+    age                     INT NOT NULL,
+    gender                  VARCHAR(20) NOT NULL,
+    weight_kg               DECIMAL(5,2) NULL,
+    height_cm               DECIMAL(5,2) NULL,
+    address_line            VARCHAR(255) NOT NULL,
+    phone_number            VARCHAR(30) NOT NULL,
+    email                   VARCHAR(255) NULL,
+    profession              VARCHAR(120) NULL,
+    nationality             VARCHAR(80) NULL,
+    insurance_provider      VARCHAR(120) NOT NULL,
+    CONSTRAINT uq_patient_email UNIQUE (email),
+    CONSTRAINT ck_patient_age CHECK (age BETWEEN 0 AND 120),
+    CONSTRAINT ck_patient_weight CHECK (weight_kg IS NULL OR weight_kg > 0),
+    CONSTRAINT ck_patient_height CHECK (height_cm IS NULL OR height_cm > 0)
+);
+
+CREATE TABLE emergency_contact (
+    patient_amka            CHAR(11) NOT NULL,
+    first_name              VARCHAR(80) NOT NULL,
+    last_name               VARCHAR(80) NOT NULL,
+    phone_number            VARCHAR(30) NOT NULL,
+    email                   VARCHAR(255) NULL,
+    PRIMARY KEY (patient_amka, first_name, last_name, phone_number),
+    CONSTRAINT fk_emergency_contact_patient
+        FOREIGN KEY (patient_amka) REFERENCES patient(patient_amka)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+);
+
+CREATE TABLE icd10_diagnosis (
+    icd10_code              VARCHAR(20) PRIMARY KEY,
+    icd10_description       VARCHAR(500) NOT NULL
+);
+
+CREATE TABLE ken (
+    ken_code                VARCHAR(20) PRIMARY KEY,
+    ken_description         VARCHAR(500) NOT NULL,
+    basic_cost              DECIMAL(12,2) NOT NULL,
+    mean_duration_days      INT NOT NULL,
+    extra_daily_cost        DECIMAL(12,2) NOT NULL,/*numeric*/
+    CONSTRAINT ck_ken_costs CHECK (basic_cost >= 0 AND extra_daily_cost >= 0),
+    CONSTRAINT ck_ken_duration CHECK (mean_duration_days >= 0)
+);
+
+CREATE TABLE operating_place (
+    place_id                INT AUTO_INCREMENT PRIMARY KEY,
+    place_name              VARCHAR(120) NOT NULL,
+    place_type              VARCHAR(30) NOT NULL,
+    place_status            VARCHAR(20) NOT NULL,
+    CONSTRAINT uq_place_name UNIQUE (place_name),
+    CONSTRAINT ck_place_type CHECK (place_type IN ('OPERATING_ROOM', 'PROCEDURE_ROOM')),
+    CONSTRAINT ck_place_status CHECK (place_status IN ('AVAILABLE', 'OCCUPIED', 'MAINTENANCE'))
+);
+
+CREATE TABLE department_shift (
+    shift_id                BIGINT AUTO_INCREMENT PRIMARY KEY,
+    department_id           INT NOT NULL,
+    shift_date              DATE NOT NULL,
+    shift_type              VARCHAR(20) NOT NULL,
+    start_time              TIME NOT NULL,
+    end_time                TIME NOT NULL,
+    shift_status            VARCHAR(20) NOT NULL,
+    CONSTRAINT fk_department_shift_department
+        FOREIGN KEY (department_id) REFERENCES department(department_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT uq_department_shift UNIQUE (department_id, shift_date, shift_type),
+    CONSTRAINT ck_shift_type CHECK (shift_type IN ('MORNING', 'AFTERNOON', 'NIGHT')),
+    CONSTRAINT ck_shift_status CHECK (shift_status IN ('PROCESSING', 'VALID')),
+    CONSTRAINT ck_shift_time CHECK (
+        (shift_type = 'MORNING'   AND start_time = '07:00:00' AND end_time = '15:00:00') OR
+        (shift_type = 'AFTERNOON' AND start_time = '15:00:00' AND end_time = '23:00:00') OR
+        (shift_type = 'NIGHT'     AND start_time = '23:00:00' AND end_time = '07:00:00')
+    )
+);
+
+CREATE TABLE shift_assignment (
+    shift_id                BIGINT NOT NULL,
+    personnel_amka          CHAR(11) NOT NULL,
+    assigned_role           VARCHAR(40) NULL,
+    PRIMARY KEY (shift_id, personnel_amka),
+    CONSTRAINT fk_shift_assignment_shift
+        FOREIGN KEY (shift_id) REFERENCES department_shift(shift_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_shift_assignment_personnel
+        FOREIGN KEY (personnel_amka) REFERENCES personnel(amka)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+);
+
+CREATE TABLE emergency_visit (
+    visit_id                BIGINT AUTO_INCREMENT PRIMARY KEY,
+    patient_amka            CHAR(11) NOT NULL,
+    triage_nurse_amka       CHAR(11) NOT NULL,
+    arrival_ts              DATETIME NOT NULL,
+    symptoms                TEXT NOT NULL,
+    emergency_level         INT NOT NULL,
+    referred_department_id  INT NULL,
+    service_start_ts        DATETIME NULL,
+    disposition             VARCHAR(20) NOT NULL,
+    discharge_instructions  TEXT NULL,
+    status                  VARCHAR(20),
+    CONSTRAINT fk_emergency_visit_patient
+        FOREIGN KEY (patient_amka) REFERENCES patient(patient_amka)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_emergency_visit_triage_nurse
+        FOREIGN KEY (triage_nurse_amka) REFERENCES nurse(amka)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT ck_emergency_level CHECK (emergency_level BETWEEN 1 AND 5),
+    CONSTRAINT ck_emergency_disposition CHECK (disposition IN ('DISCHARGED', 'HOSPITALIZED')),
+    CONSTRAINT ck_emergency_status CHECK (status IN ('WAITING', 'CALLED')),
+    CONSTRAINT ck_emergency_times CHECK (
+        service_start_ts IS NULL OR service_start_ts >= arrival_ts
+    )
+);
+
+CREATE TABLE hospitalization (
+    hosp_id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+    patient_amka             CHAR(11) NOT NULL,
+    department_id            INT NOT NULL,
+    bed_id                   INT NOT NULL,
+    ken_code                 VARCHAR(20) NOT NULL,
+    admission_ts             DATETIME NOT NULL,
+    discharge_ts             DATETIME NULL,
+    admission_icd10_code     VARCHAR(20) NOT NULL,
+    discharge_icd10_code     VARCHAR(20) NULL,
+    total_cost               DECIMAL(12,2) NOT NULL DEFAULT 0,
+    CONSTRAINT fk_hosp_patient
+        FOREIGN KEY (patient_amka) REFERENCES patient(patient_amka)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_hosp_department
+        FOREIGN KEY (department_id) REFERENCES department(department_id)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_hosp_bed
+        FOREIGN KEY (bed_id) REFERENCES bed(bed_id)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_hosp_ken
+        FOREIGN KEY (ken_code) REFERENCES ken(ken_code)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_hosp_admission_icd10
+        FOREIGN KEY (admission_icd10_code) REFERENCES icd10_diagnosis(icd10_code)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_hosp_discharge_icd10
+        FOREIGN KEY (discharge_icd10_code) REFERENCES icd10_diagnosis(icd10_code)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT uq_hosp_patient_pair UNIQUE (hosp_id, patient_amka),
+    CONSTRAINT ck_hosp_cost CHECK (total_cost >= 0),
+    CONSTRAINT ck_hosp_dates CHECK (discharge_ts IS NULL OR discharge_ts >= admission_ts)
+);
+
+CREATE TABLE hospitalization_doctor (
+    hosp_id                  BIGINT NOT NULL,
+    doctor_amka              CHAR(11) NOT NULL,
+    PRIMARY KEY (hosp_id, doctor_amka),
+    CONSTRAINT fk_hosp_doctor_hosp
+        FOREIGN KEY (hosp_id) REFERENCES hospitalization(hosp_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_hosp_doctor_doctor
+        FOREIGN KEY (doctor_amka) REFERENCES doctor(amka)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE
+);
+
+CREATE TABLE lab_test_catalog (
+    test_code               VARCHAR(30) PRIMARY KEY,
+    test_name               VARCHAR(255) NOT NULL,
+    test_type               VARCHAR(80) NOT NULL
+);
+
+CREATE TABLE lab_test (
+    test_id                 BIGINT AUTO_INCREMENT PRIMARY KEY,
+    hosp_id                 BIGINT NOT NULL,
+    test_code               VARCHAR(30) NOT NULL,
+    ordered_by_doctor_amka  CHAR(11) NOT NULL,
+    test_datetime           DATETIME NOT NULL,
+    result_text             TEXT NULL,
+    CONSTRAINT fk_lab_test_hosp
+        FOREIGN KEY (hosp_id) REFERENCES hospitalization(hosp_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_lab_test_catalog
+        FOREIGN KEY (test_code) REFERENCES lab_test_catalog(test_code)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_lab_test_doctor
+        FOREIGN KEY (ordered_by_doctor_amka) REFERENCES doctor(amka)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE
+);
+
+CREATE TABLE procedure_catalog (
+    procedure_code          VARCHAR(30) PRIMARY KEY,
+    procedure_name          VARCHAR(255) NOT NULL,
+    procedure_category      VARCHAR(20) NOT NULL,
+    required_place_type     VARCHAR(30) NOT NULL,
+    CONSTRAINT ck_procedure_category CHECK (procedure_category IN ('SURGICAL', 'DIAGNOSTIC', 'THERAPEUTIC')),
+    CONSTRAINT ck_required_place_type CHECK (required_place_type IN ('OPERATING_ROOM', 'PROCEDURE_ROOM'))
+);
+
+CREATE TABLE procedure_event (
+    procedure_event_id      BIGINT AUTO_INCREMENT PRIMARY KEY,
+    hosp_id                 BIGINT NOT NULL,
+    procedure_code          VARCHAR(30) NOT NULL,
+    place_id                INT NOT NULL,
+    chief_surgeon_amka      CHAR(11) NOT NULL,
+    start_ts                DATETIME NOT NULL,
+    end_ts                  DATETIME NOT NULL,
+    actual_duration_min     INT NOT NULL,
+    CONSTRAINT fk_proc_event_hosp
+        FOREIGN KEY (hosp_id) REFERENCES hospitalization(hosp_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_proc_event_catalog
+        FOREIGN KEY (procedure_code) REFERENCES procedure_catalog(procedure_code)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_proc_event_place
+        FOREIGN KEY (place_id) REFERENCES operating_place(place_id)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_proc_event_chief
+        FOREIGN KEY (chief_surgeon_amka) REFERENCES doctor(amka)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT ck_proc_event_times CHECK (end_ts > start_ts),
+    CONSTRAINT ck_proc_event_duration CHECK (actual_duration_min > 0)
+);
+
+CREATE TABLE procedure_participant (
+    procedure_event_id      BIGINT NOT NULL,
+    personnel_amka          CHAR(11) NOT NULL,
+    PRIMARY KEY (procedure_event_id, personnel_amka),
+    CONSTRAINT fk_proc_participant_event
+        FOREIGN KEY (procedure_event_id) REFERENCES procedure_event(procedure_event_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_proc_participant_personnel
+        FOREIGN KEY (personnel_amka) REFERENCES personnel(amka)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE
+);
+
+CREATE TABLE drug (
+    drug_id                 VARCHAR(80) PRIMARY KEY,
+    drug_name               VARCHAR(255) NOT NULL
+);
+
+CREATE TABLE active_substance (
+    substance_id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+    substance_name          VARCHAR(255) NOT NULL,
+    CONSTRAINT uq_substance_name UNIQUE (substance_name)
+);
+
+CREATE TABLE drug_active_substance (
+    drug_id                 VARCHAR(80) NOT NULL,
+    substance_id            BIGINT NOT NULL,
+    PRIMARY KEY (drug_id, substance_id),
+    CONSTRAINT fk_das_drug
+        FOREIGN KEY (drug_id) REFERENCES drug(drug_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_das_substance
+        FOREIGN KEY (substance_id) REFERENCES active_substance(substance_id)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE
+);
+
+CREATE TABLE patient_allergy (
+    patient_amka            CHAR(11) NOT NULL,
+    substance_id            BIGINT NOT NULL,
+    PRIMARY KEY (patient_amka, substance_id),
+    CONSTRAINT fk_patient_allergy_patient
+        FOREIGN KEY (patient_amka) REFERENCES patient(patient_amka)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_patient_allergy_substance
+        FOREIGN KEY (substance_id) REFERENCES active_substance(substance_id)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE
+);
+
+CREATE TABLE prescription (
+    prescription_id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+    hosp_id                 BIGINT NOT NULL,
+    patient_amka            CHAR(11) NOT NULL,
+    doctor_amka             CHAR(11) NOT NULL,
+    drug_id                 VARCHAR(80) NOT NULL,
+    dosage                  VARCHAR(120) NOT NULL,
+    frequency               VARCHAR(120) NOT NULL,
+    start_datetime          DATETIME NOT NULL,
+    end_datetime            DATETIME NULL,
+    CONSTRAINT fk_prescription_hosp_patient
+        FOREIGN KEY (hosp_id, patient_amka) REFERENCES hospitalization(hosp_id, patient_amka)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_prescription_doctor
+        FOREIGN KEY (doctor_amka) REFERENCES doctor(amka)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_prescription_drug
+        FOREIGN KEY (drug_id) REFERENCES drug(drug_id)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+    CONSTRAINT uq_prescription UNIQUE (doctor_amka, patient_amka, drug_id, start_datetime),
+    CONSTRAINT ck_prescription_dates CHECK (end_datetime IS NULL OR end_datetime >= start_datetime)
+);
+
+CREATE TABLE hospitalization_evaluation (
+    hosp_id                         BIGINT PRIMARY KEY,
+    evaluation_date                DATE NOT NULL,
+    medical_care_score             INT NOT NULL,
+    nursing_care_score             INT NOT NULL,
+    cleanliness_score              INT NOT NULL,
+    food_score                     INT NOT NULL,
+    overall_experience_score       INT NOT NULL,
+    comments                       TEXT NULL,
+    CONSTRAINT fk_eval_hosp
+        FOREIGN KEY (hosp_id) REFERENCES hospitalization(hosp_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT ck_eval_medical CHECK (medical_care_score BETWEEN 1 AND 5),
+    CONSTRAINT ck_eval_nursing CHECK (nursing_care_score BETWEEN 1 AND 5),
+    CONSTRAINT ck_eval_cleanliness CHECK (cleanliness_score BETWEEN 1 AND 5),
+    CONSTRAINT ck_eval_food CHECK (food_score BETWEEN 1 AND 5),
+    CONSTRAINT ck_eval_overall CHECK (overall_experience_score BETWEEN 1 AND 5)
+);
+
+CREATE TABLE image_asset (
+    image_id                 BIGINT AUTO_INCREMENT PRIMARY KEY,
+    image_url                VARCHAR(500) NOT NULL,
+    alt_text                 VARCHAR(500) NOT NULL
+);
+
+CREATE TABLE entity_image (
+    entity_name              VARCHAR(64) NOT NULL,
+    entity_pk                VARCHAR(64) NOT NULL,
+    image_id                 BIGINT NOT NULL,
+    entity_description       TEXT NULL,
+    PRIMARY KEY (entity_name, entity_pk, image_id),
+    CONSTRAINT fk_entity_image_asset
+        FOREIGN KEY (image_id) REFERENCES image_asset(image_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+);
+
+/* Indexes for the requested queries */
+
+CREATE INDEX idx_doctor_specialization_rank /*Για ερώτημα 2, μπορούμε να βρούμε την ειδικότητα και να συνεχίσει πιο γρήγορα το query*/
+    ON doctor (specialization, doctor_rank);
+
+CREATE INDEX idx_doctor_supervisor /*Για ερώτημα 13 για να βρούμε την σειρά ιεραρχίας*/
+    ON doctor (supervisor_amka);
+
+CREATE INDEX idx_nurse_department_rank /*Για Q8 και για Q12 για να βρούμε τους νοσηλευτές ενός τμήματος με συγκεκριμένη βαθμίδα πιο γρήγορα*/
+    ON nurse (department_id, nurse_rank);
+
+CREATE INDEX idx_admin_department_role /*To ίδιο με το προηγούμενο για το διοικητικό προσωπικό για Q8 και Q12 για να βρούμε τους διοικητικούς ενός τμήματος με συγκεκριμένο ρόλο πιο γρήγορα*/
+    ON administrative_staff (department_id, admin_role);
+
+CREATE INDEX idx_doctor_department_department /*Q12 για να βρούμε τους γιατρούς ενός τμήματος πιο γρήγορα*/
+    ON doctor_department (department_id, doctor_amka);
+
+CREATE INDEX idx_shift_department_date_type 
+    ON department_shift (department_id, shift_date, shift_type); /* Q8, Q12 για να βρούμε τις βάρδιες ενός τμήματος σε συγκεκριμένη ημερομηνία και τύπο πιο γρήγορα */
+
+CREATE INDEX idx_shift_assignment_personnel
+    ON shift_assignment (personnel_amka, shift_id); /* Q8, Q12 για να βρούμε τις βάρδιες ενός νοσηλευτή ή διοικητικού προσωπικού πιο γρήγορα */
+
+CREATE INDEX idx_emergency_visit_level_arrival /* Q15 για να βρούμε τις επείγουσες επισκέψεις με συγκεκριμένο επίπεδο επείγοντος και χρονικό διάστημα άφιξης πιο γρήγορα */
+    ON emergency_visit (emergency_level, arrival_ts);
+
+CREATE INDEX idx_emergency_visit_referred_department /* Q15 για να βρούμε τις επείγουσες επισκέψεις που παραπέμφθηκαν σε συγκεκριμένο τμήμα πιο γρήγορα */
+    ON emergency_visit (referred_department_id);
+
+CREATE INDEX idx_hosp_patient_dept_dates /*Q3, Q6 , Q9 για να βρούμε τις νοσηλείες ενός ασθενή σε συγκεκριμένο τμήμα και χρονικό διάστημα πιο γρήγορα*/
+    ON hospitalization (patient_amka, department_id, admission_ts, discharge_ts);
+
+CREATE INDEX idx_hosp_department_admission /*Q1 για να βρούμε τις νοσηλείες ενός τμήματος με συγκεκριμένη ημερομηνία εισαγωγής πιο γρήγορα*/
+    ON hospitalization (department_id, admission_ts);
+
+CREATE INDEX idx_hosp_ken /*Q1 για να βρούμε τις νοσηλείες με συγκεκριμένο κεν πιο γρήγορα*/
+    ON hospitalization (ken_code);
+
+CREATE INDEX idx_hosp_admission_icd10 /*Q14 για να βρούμε τις νοσηλείες με συγκεκριμένο κωδικό διάγνωσης εισαγωγής πιο γρήγορα*/
+    ON hospitalization (admission_icd10_code); /*Αν συμφωνειτε λεω να προσθεσουμε και το admission_ts*/
+
+CREATE INDEX idx_lab_test_hosp_code /* Μαλλον για σβησιμο */
+    ON lab_test (hosp_id, test_code, test_datetime);
+
+CREATE INDEX idx_lab_test_ordering_doctor /* Μαλλον για σβησιμο */
+    ON lab_test (ordered_by_doctor_amka, test_datetime);
+
+CREATE INDEX idx_proc_event_hosp_start /*Μάλλον για τροποποιηση*/
+    ON procedure_event (hosp_id, start_ts);
+
+CREATE INDEX idx_proc_event_chief /*Q2,Q5,Q11 ίσως*/
+    ON procedure_event (chief_surgeon_amka, start_ts);
+
+CREATE INDEX idx_proc_event_place /*Ελεγχος overlap για το ίδιο μέρος πιο γρήγορα -> Triggers*/
+    ON procedure_event (place_id, start_ts, end_ts);
+
+CREATE INDEX idx_proc_participant_personnel /*Q11*/
+    ON procedure_participant (personnel_amka, procedure_event_id);
+
+CREATE INDEX idx_prescription_hosp_patient_start /*Q10 για να βρούμε τις συνταγές ενός ασθενή σε συγκεκριμένη νοσηλεία*/
+    ON prescription (hosp_id, patient_amka, start_datetime);
+
+CREATE INDEX idx_prescription_doctor /* Μαλλον για σβησιμο */
+    ON prescription (doctor_amka, start_datetime);
+
+CREATE INDEX idx_das_substance /*Q7 για να βρούμε τα φάρμακα που περιέχουν μια δραστική ουσία πιο γρήγορα*/
+    ON drug_active_substance (substance_id, drug_id);
+
+CREATE INDEX idx_patient_allergy_substance /*Q7 για να βρούμε τους ασθενείς που είναι αλλεργικοί σε μια δραστική ουσία πιο γρήγορα*/
+    ON patient_allergy (substance_id, patient_amka);
+
+CREATE INDEX idx_evaluation_date /*??*/
+    ON hospitalization_evaluation (evaluation_date);
+
+CREATE INDEX idx_evaluation_evaluation /*Q4 Για να βρούμε τις αξιολογήσεις των ασθενών για συγκεκριμένο ιατρό μέσω της νοσηλείας*/
+    ON hospitalization_evaluation (hosp_id);
+
+/* Views*/
+CREATE VIEW patient_history AS
+SELECT 
+    p.patient_amka, p.first_name, p.last_name, p.insurance_provider,
+    h.hosp_id, h.department_id, h.admission_ts, h.discharge_ts, h.total_cost,
+    d.department_name, id.icd10_code, id.icd10_description,
+    k.ken_code, k.ken_description
+FROM patient p
+JOIN hospitalization h ON p.patient_amka = h.patient_amka
+JOIN department d ON h.department_id = d.department_id
+JOIN icd10_diagnosis id ON h.admission_icd10_code = id.icd10_code
+JOIN ken k ON h.ken_code = k.ken_code;
+
+
+CREATE VIEW prescription_substances AS
+SELECT
+    pr.prescription_id, pr.hosp_id, pr.patient_amka, pr.doctor_amka,
+    pr.drug_id, dr.drug_name, pr.start_datetime, pr.end_datetime,
+    a.substance_id, a.substance_name
+FROM prescription pr
+JOIN drug dr ON pr.drug_id = dr.drug_id
+JOIN drug_active_substance das ON dr.drug_id = das.drug_id
+JOIN active_substance a ON das.substance_id = a.substance_id;
+
+CREATE VIEW shift_staff AS
+SELECT
+    ds.shift_id,
+    ds.department_id,
+    d.department_name,
+    ds.shift_date,
+    ds.shift_type,
+    ds.start_time,
+    ds.end_time,
+    ds.shift_status,
+    sa.personnel_amka,
+    p.first_name,
+    p.last_name,
+    p.personnel_type,
+    sa.assigned_role
+FROM department_shift ds
+JOIN department d ON d.department_id = ds.department_id
+JOIN shift_assignment sa ON sa.shift_id = ds.shift_id
+JOIN personnel p ON p.amka = sa.personnel_amka;
+
+CREATE VIEW doctor_procedure AS
+SELECT
+    pe.procedure_event_id,
+    pe.hosp_id,
+    pe.procedure_code,
+    pc.procedure_name,
+    pc.procedure_category,
+    pe.chief_surgeon_amka AS doctor_amka,
+    p.first_name,
+    p.last_name,
+    d.specialization,
+    d.doctor_rank,
+    pe.place_id,
+    op.place_name,
+    pe.start_ts,
+    pe.end_ts,
+    pe.actual_duration_min
+FROM procedure_event pe
+JOIN procedure_catalog pc ON pc.procedure_code = pe.procedure_code
+JOIN doctor d ON d.amka = pe.chief_surgeon_amka
+JOIN personnel p ON p.amka = d.amka
+JOIN operating_place op ON op.place_id = pe.place_id;
+
+
+/* Triggers for key business rules */
+
+DELIMITER $$
+
+CREATE TRIGGER trg_doctor_supervision_bi
+BEFORE INSERT ON doctor
+FOR EACH ROW
+BEGIN
+DECLARE current_amka CHAR(11);
+    IF NEW.supervisor_amka = NEW.amka THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'A doctor cannot supervise himself/herself.';
+    END IF;
+
+    IF NEW.doctor_rank = 'RESIDENT' AND NEW.supervisor_amka IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'A resident doctor must have a supervisor.';
+    END IF;
+
+    IF NEW.doctor_rank = 'DIRECTOR' AND NEW.supervisor_amka IS NOT NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'A director doctor cannot have a supervisor.';
+    END IF;
+
+    IF NEW.supervisor_amka IS NOT NULL THEN
+        SET current_amka = NEW.supervisor_amka;
+        WHILE current_amka IS NOT NULL DO
+            IF current_amka = NEW.amka THEN /* έφτασα σε κύκλο */
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Circular supervision chain detected.';
+            END IF;
+            SELECT supervisor_amka INTO current_amka FROM doctor WHERE amka = current_amka; /*ελέγχω τον επόμενο */
+        END WHILE;
+    END IF;
+END$$
+
+CREATE TRIGGER trg_doctor_supervision_bu
+BEFORE UPDATE ON doctor
+FOR EACH ROW
+BEGIN
+DECLARE current_amka CHAR(11);
+    IF NEW.supervisor_amka = NEW.amka THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'A doctor cannot supervise himself/herself.';
+    END IF;
+
+    IF NEW.doctor_rank = 'RESIDENT' AND NEW.supervisor_amka IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'A resident doctor must have a supervisor.';
+    END IF;
+
+    IF NEW.doctor_rank = 'DIRECTOR' AND NEW.supervisor_amka IS NOT NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'A director doctor cannot have a supervisor.';
+    END IF;
+
+    IF NEW.supervisor_amka IS NOT NULL THEN
+        SET current_amka = NEW.supervisor_amka;
+        WHILE current_amka IS NOT NULL DO
+            IF current_amka = NEW.amka THEN /* Εφτασα σε κύκλο */
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Circular supervision chain detected.';
+            END IF;
+            SELECT supervisor_amka INTO current_amka FROM doctor WHERE amka = current_amka; /*ελέγχω τον επόμενο */
+        END WHILE;
+    END IF;
+END$$
+
+CREATE TRIGGER trg_prescription_no_allergy_bi
+BEFORE INSERT ON prescription
+FOR EACH ROW /* Για πολλά perscriptions*/
+BEGIN
+    IF EXISTS (  /*Αν query επιστρεψει αποτελέσματα τότε υπάρχει αλλεργία και απαγορεύεται η συνταγογράφηση*/
+        SELECT 1 /*Δεν χρειάζεται να επιλέξουμε συγκεκριμένα πεδία, αρκεί να επιστρέψουμε κάτι για να ξέρουμε ότι υπάρχει αποτέλεσμα*/
+        FROM patient_allergy pa
+        JOIN drug_active_substance das /*Ενώνουμε τους πίνακες για να βρούμε αν υπάρχει κοινό στοιχείο μεταξύ των δραστικών ουσιών του φαρμάκου και των αλλεργιών του ασθενή*/
+          ON das.substance_id = pa.substance_id /*Ελέγχουμε αν ο ασθενής είναι αλλεργικός σε κάποια από τις δραστικές ουσίες του φαρμάκου που προσπαθούμε να συνταγογραφήσουμε*/
+        WHERE pa.patient_amka = NEW.patient_amka
+          AND das.drug_id = NEW.drug_id
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Prescription forbidden: patient is allergic to an active substance of this drug.';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_prescription_no_allergy_bu
+BEFORE UPDATE ON prescription /* ακολουθάμε την ίδια λογικη και για το update */
+FOR EACH ROW
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM patient_allergy pa
+        JOIN drug_active_substance das
+          ON das.substance_id = pa.substance_id
+        WHERE pa.patient_amka = NEW.patient_amka
+          AND das.drug_id = NEW.drug_id
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Prescription forbidden: patient is allergic to an active substance of this drug.';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_procedure_room_overlap_bi
+BEFORE INSERT ON procedure_event /* insert of an event */
+FOR EACH ROW
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM procedure_event pe
+        WHERE pe.place_id = NEW.place_id
+          AND NEW.start_ts < pe.end_ts
+          AND NEW.end_ts > pe.start_ts
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Two procedures cannot overlap in the same operating place.';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM procedure_event pe
+        WHERE pe.chief_surgeon_amka = NEW.chief_surgeon_amka
+          AND NEW.start_ts < pe.end_ts
+          AND NEW.end_ts > pe.start_ts
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'The same chief surgeon cannot participate in overlapping procedures.';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_procedure_room_overlap_bu
+BEFORE UPDATE ON procedure_event /* update of an event */
+FOR EACH ROW
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM procedure_event pe
+        WHERE pe.procedure_event_id != NEW.procedure_event_id  /* not equal */
+          AND pe.place_id = NEW.place_id
+          AND NEW.start_ts < pe.end_ts
+          AND NEW.end_ts > pe.start_ts
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Two procedures cannot overlap in the same operating place.';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM procedure_event pe
+        WHERE pe.procedure_event_id != NEW.procedure_event_id /* not equal */
+          AND pe.chief_surgeon_amka = NEW.chief_surgeon_amka
+          AND NEW.start_ts < pe.end_ts
+          AND NEW.end_ts > pe.start_ts
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'The same chief surgeon cannot participate in overlapping procedures.';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_procedure_participant_overlap_bi /* Για να ελέγξουμε αν το προσωπικό που προσπαθούμε να προσθέσουμε ως συμμετέχοντα σε μια διαδικασία συμμετέχει ήδη σε άλλη διαδικασία που επικαλύπτεται χρονικά με την τρέχουσα ή είναι επικεφαλής χειρουργός σε άλλη διαδικασία που επικαλύπτεται χρονικά με την τρέχουσα */
+BEFORE INSERT ON procedure_participant
+FOR EACH ROW
+BEGIN
+    DECLARE v_start DATETIME; /* Χρειαζόμαστε την ημερομηνία έναρξης */
+    DECLARE v_end DATETIME;   /* και λήξης της διαδικασίας για να ελέγξουμε τις επικαλύψεις */
+
+    SELECT start_ts, end_ts /* Επιλέγουμε την ημερομηνία έναρξης και λήξης της διαδικασίας στην οποία προσπαθούμε να προσθέσουμε συμμετέχοντα */
+      INTO v_start, v_end
+      FROM procedure_event
+     WHERE procedure_event_id = NEW.procedure_event_id;
+
+    IF EXISTS (  /* Ελέγχουμε αν το προσωπικό που προσπαθούμε να προσθέσουμε συμμετέχει ήδη σε άλλη διαδικασία που επικαλύπτεται χρονικά με την τρέχουσα */
+        SELECT 1 /* Δεν χρειάζεται να επιλέξουμε συγκεκριμένα πεδία, αρκεί να επιστρέψουμε κάτι για να ξέρουμε ότι υπάρχει αποτέλεσμα */
+        FROM procedure_participant pp
+        JOIN procedure_event pe
+          ON pe.procedure_event_id = pp.procedure_event_id
+        WHERE pp.personnel_amka = NEW.personnel_amka 
+          AND v_start < pe.end_ts
+          AND v_end > pe.start_ts
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'The same staff member cannot participate in overlapping procedures.';
+    END IF;
+
+    IF EXISTS ( /* Ελέγχουμε αν το προσωπικό που προσπαθούμε να προσθέσουμε είναι επικεφαλής χειρουργός σε άλλη διαδικασία που επικαλύπτεται χρονικά με την τρέχουσα */
+        SELECT 1
+        FROM procedure_event pe
+        WHERE pe.chief_surgeon_amka = NEW.personnel_amka
+          AND v_start < pe.end_ts
+          AND v_end > pe.start_ts
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'The same doctor cannot be chief surgeon in one procedure and participant in another at the same time.';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_procedure_participant_overlap_bu /* Για να ελέγξουμε αν το προσωπικό που προσπαθούμε να προσθέσουμε ως συμμετέχοντα σε μια διαδικασία συμμετέχει ήδη σε άλλη διαδικασία που επικαλύπτεται χρονικά με την τρέχουσα ή είναι επικεφαλής χειρουργός σε άλλη διαδικασία που επικαλύπτεται χρονικά με την τρέχουσα */
+BEFORE UPDATE ON procedure_participant
+FOR EACH ROW
+BEGIN
+    DECLARE v_start DATETIME; /* Χρειαζόμαστε την ημερομηνία έναρξης */
+    DECLARE v_end DATETIME;   /* και λήξης της διαδικασίας για να ελέγξουμε τις επικαλύψεις */
+
+    SELECT start_ts, end_ts /* Επιλέγουμε την ημερομηνία έναρξης και λήξης της διαδικασίας στην οποία προσπαθούμε να προσθέσουμε συμμετέχοντα */
+      INTO v_start, v_end
+      FROM procedure_event
+     WHERE procedure_event_id = NEW.procedure_event_id;
+
+    IF EXISTS (  /* Ελέγχουμε αν το προσωπικό που προσπαθούμε να προσθέσουμε συμμετέχει ήδη σε άλλη διαδικασία που επικαλύπτεται χρονικά με την τρέχουσα */
+        SELECT 1 /* Δεν χρειάζεται να επιλέξουμε συγκεκριμένα πεδία, αρκεί να επιστρέψουμε κάτι για να ξέρουμε ότι υπάρχει αποτέλεσμα */
+        FROM procedure_participant pp
+        JOIN procedure_event pe
+          ON pe.procedure_event_id = pp.procedure_event_id
+        WHERE pp.personnel_amka = NEW.personnel_amka 
+          AND v_start < pe.end_ts
+          AND v_end > pe.start_ts
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'The same staff member cannot participate in overlapping procedures.';
+    END IF;
+
+    IF EXISTS ( /* Ελέγχουμε αν το προσωπικό που προσπαθούμε να προσθέσουμε είναι επικεφαλής χειρουργός σε άλλη διαδικασία που επικαλύπτεται χρονικά με την τρέχουσα */
+        SELECT 1
+        FROM procedure_event pe
+        WHERE pe.chief_surgeon_amka = NEW.personnel_amka
+          AND v_start < pe.end_ts
+          AND v_end > pe.start_ts
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'The same doctor cannot be chief surgeon in one procedure and participant in another at the same time.';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_procedure_place_type_bi /* Για να ελέγξουμε αν ο τύπος του χώρου που προσπαθούμε να ορίσουμε για μια διαδικασία ταιριάζει με τον απαιτούμενο τύπο χώρου της διαδικασίας */
+BEFORE INSERT ON procedure_event
+FOR EACH ROW
+BEGIN
+    DECLARE v_required_place_type VARCHAR(30);
+    DECLARE v_actual_place_type VARCHAR(30);
+
+    SELECT required_place_type
+      INTO v_required_place_type
+      FROM procedure_catalog
+     WHERE procedure_code = NEW.procedure_code;
+
+    SELECT place_type
+      INTO v_actual_place_type
+      FROM operating_place
+     WHERE place_id = NEW.place_id;
+
+    IF v_required_place_type != v_actual_place_type THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Procedure event place type does not match the required place type of the procedure.';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_procedure_place_type_bu /* Για να ελέγξουμε αν ο τύπος του χώρου που προσπαθούμε να ορίσουμε για μια διαδικασία ταιριάζει με τον απαιτούμενο τύπο χώρου της διαδικασίας σε περίπτωση update */
+BEFORE UPDATE ON procedure_event
+FOR EACH ROW
+BEGIN
+    DECLARE v_required_place_type VARCHAR(30);
+    DECLARE v_actual_place_type VARCHAR(30);
+
+    SELECT required_place_type
+      INTO v_required_place_type
+      FROM procedure_catalog
+     WHERE procedure_code = NEW.procedure_code;
+
+    SELECT place_type
+      INTO v_actual_place_type
+      FROM operating_place
+     WHERE place_id = NEW.place_id;
+
+    IF v_required_place_type != v_actual_place_type THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Procedure event place type does not match the required place type of the procedure.';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_procedure_participant_not_chief_bi /* Για να ελέγξουμε αν ο συμμετέχων που προσπαθούμε να προσθέσουμε είναι ο ίδιος με τον επικεφαλής χειρουργό της διαδικασίας, κάτι που απαγορεύεται */
+BEFORE INSERT ON procedure_participant
+FOR EACH ROW
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM procedure_event pe
+        WHERE pe.procedure_event_id = NEW.procedure_event_id
+          AND pe.chief_surgeon_amka = NEW.personnel_amka
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Chief surgeon must not be duplicated in procedure participants.';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_procedure_participant_not_admin_bi /* Για να ελέγξουμε αν ο συμμετέχων που προσπαθούμε να προσθέσουμε είναι διοικητικό προσωπικό, κάτι που απαγορεύεται */
+BEFORE INSERT ON procedure_participant
+FOR EACH ROW
+BEGIN
+    DECLARE v_type VARCHAR(20);
+    SELECT personnel_type INTO v_type FROM personnel WHERE amka = NEW.personnel_amka;
+    IF v_type = 'ADMIN' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Administrative staff cannot participate in procedures.';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_procedure_participant_not_admin_bu /* Για να ελέγξουμε αν ο συμμετέχων που προσπαθούμε να προσθέσουμε είναι διοικητικό προσωπικό σε περίπτωση update, κάτι που απαγορεύεται */
+BEFORE UPDATE ON procedure_participant
+FOR EACH ROW
+BEGIN
+    DECLARE v_type VARCHAR(20);
+    SELECT personnel_type INTO v_type FROM personnel WHERE amka = NEW.personnel_amka;
+    IF v_type = 'ADMIN' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Administrative staff cannot participate in procedures.';
+    END IF;
+END$$
+
+
+CREATE TRIGGER trg_shift_monthly_limits_bi
+BEFORE INSERT ON shift_assignment
+FOR EACH ROW
+BEGIN
+    DECLARE shift_cnt       INT DEFAULT 0;
+    DECLARE per_type        VARCHAR(20);
+    DECLARE max_limit       INT;
+    DECLARE new_shift_date  DATE;
+
+    SELECT personnel_type INTO per_type
+    FROM personnel
+    WHERE amka = NEW.personnel_amka;
+
+    SELECT shift_date INTO new_shift_date
+    FROM department_shift
+    WHERE shift_id = NEW.shift_id;
+
+    SELECT COUNT(*) INTO shift_cnt
+    FROM shift_assignment sa
+    JOIN department_shift ds ON sa.shift_id = ds.shift_id
+    WHERE sa.personnel_amka = NEW.personnel_amka
+        AND MONTH(new_shift_date) = MONTH(ds.shift_date)
+        AND YEAR(new_shift_date) = YEAR(ds.shift_date);
+
+    IF per_type = 'DOCTOR' THEN 
+        SET max_limit = 15;
+    END IF;
+    
+    IF per_type = 'NURSE' THEN 
+        SET max_limit = 20;
+    END IF;
+
+     IF per_type = 'ADMIN' THEN 
+        SET max_limit = 25;
+    END IF;
+
+    IF shift_cnt >= max_limit THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Exceeding monthly shift limit.';
+    END IF;
+
+END$$  
+
+
+CREATE TRIGGER trg_shift_monthly_limits_bu
+BEFORE UPDATE ON shift_assignment
+FOR EACH ROW
+BEGIN
+    DECLARE shift_cnt       INT DEFAULT 0;
+    DECLARE per_type        VARCHAR(20);
+    DECLARE max_limit       INT;
+    DECLARE new_shift_date  DATE;
+
+    SELECT personnel_type INTO per_type
+    FROM personnel
+    WHERE amka = NEW.personnel_amka;
+
+    SELECT shift_date INTO new_shift_date
+    FROM department_shift
+    WHERE shift_id = NEW.shift_id;
+
+    SELECT COUNT(*) INTO shift_cnt
+    FROM shift_assignment sa
+    JOIN department_shift ds ON sa.shift_id = ds.shift_id
+    WHERE sa.personnel_amka = NEW.personnel_amka
+        AND MONTH(new_shift_date) = MONTH(ds.shift_date)
+        AND YEAR(new_shift_date) = YEAR(ds.shift_date);
+
+    IF per_type = 'DOCTOR' THEN 
+        SET max_limit = 15;
+    END IF;
+    
+    IF per_type = 'NURSE' THEN 
+        SET max_limit = 20;
+    END IF;
+
+     IF per_type = 'ADMIN' THEN 
+        SET max_limit = 25;
+    END IF;
+
+    IF shift_cnt >= max_limit THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Exceeding monthly shift limit.';
+    END IF;
+
+END$$  
+
+
+CREATE TRIGGER trg_shift_rest_bi
+BEFORE INSERT ON shift_assignment
+FOR EACH ROW
+BEGIN
+    DECLARE new_date        DATE;
+    DECLARE new_start       TIME;
+    DECLARE new_start_dt    DATETIME;
+
+    DECLARE old_date        DATE;
+    DECLARE old_end         TIME;
+    DECLARE old_type        VARCHAR(20);
+    DECLARE prev_end_dt     DATETIME;
+
+    /*Στοιχεία νέας βάρδιας που πάει να εισαχθεί*/
+    SELECT shift_date, start_time INTO new_date, new_start
+    FROM department_shift
+    WHERE shift_id = NEW.shift_id;
+
+    /*Μετατροπή της νέας βάρδιας σε πλήρες DATETIME*/
+    SET new_start_dt = TIMESTAMP(new_date, new_start);
+
+    /*Βρίσκουμε τα στοιχεία της αμέσως προηγούμενης βάρδιας του ίδιου ατόμου*/
+    SELECT ds.shift_date, ds.end_time, ds.shift_type 
+    INTO old_date, old_end, old_type
+    FROM shift_assignment sa
+    JOIN department_shift ds ON sa.shift_id = ds.shift_id
+    WHERE sa.personnel_amka = NEW.personnel_amka
+        AND TIMESTAMP(ds.shift_date, ds.end_time) <= new_start_dt
+    ORDER BY ds.shift_date DESC, ds.start_time DESC
+    LIMIT 1;
+
+    /*Αν βρέθηκε προηγούμενη βάρδια*/
+    IF old_date IS NOT NULL THEN
+        
+        /*ΜΕτατροπή της λήξης προηγούμενης βάρδιας σε DATETIME*/
+        SET prev_end_dt = TIMESTAMP(old_date, old_end);
+
+        /*Αν η προηγούμενη ήταν νυχτερινή η λήξη είναι μία μέρα μετά*/
+        IF old_type = 'NIGHT' THEN
+            SET prev_end_dt = DATE_ADD(prev_end_dt, INTERVAL 1 DAY);
+        END IF;
+
+        /*Έλεγχος αν έχουν περάσει τουλάχιστον 8 ώρες*/
+        IF TIMESTAMPDIFF(HOUR, prev_end_dt, new_start_dt) < 8 THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Rest must be at least 8 hours between shifts.';
+        END IF;
+        
+    END IF;
+
+END$$
+
+CREATE TRIGGER trg_shift_rest_bu
+BEFORE UPDATE ON shift_assignment
+FOR EACH ROW
+BEGIN
+    DECLARE new_date        DATE;
+    DECLARE new_start       TIME;
+    DECLARE new_start_dt    DATETIME;
+
+    DECLARE old_date        DATE;
+    DECLARE old_end         TIME;
+    DECLARE old_type        VARCHAR(20);
+    DECLARE prev_end_dt     DATETIME;
+
+    /*Στοιχεία νέας βάρδιας που πάνε να εισαχθούν*/
+    SELECT shift_date, start_time INTO new_date, new_start
+    FROM department_shift
+    WHERE shift_id = NEW.shift_id;
+
+    /*Μετατροπή της νέας βάρδιας σε πλήρες DATETIME*/
+    SET new_start_dt = TIMESTAMP(new_date, new_start);
+
+    /*Βρίσκουμε τα στοιχεία της αμέσως προηγούμενης βάρδιας του ίδιου ατόμου*/
+    SELECT ds.shift_date, ds.end_time, ds.shift_type 
+    INTO old_date, old_end, old_type
+    FROM shift_assignment sa
+    JOIN department_shift ds ON sa.shift_id = ds.shift_id
+    WHERE sa.personnel_amka = NEW.personnel_amka
+        AND sa.shift_id != OLD.shift_id
+        AND TIMESTAMP(ds.shift_date, ds.end_time) <= new_start_dt
+    ORDER BY ds.shift_date DESC, ds.start_time DESC
+    LIMIT 1;
+
+    /*Αν βρέθηκε προηγούμενη βάρδια*/
+    IF old_date IS NOT NULL THEN
+        
+        /*Μετατροπή της λήξης προηγούμενης βάρδιας σε DATETIME*/
+        SET prev_end_dt = TIMESTAMP(old_date, old_end);
+
+        /*Αν η προηγούμενη ήταν νυχτερινή η λήξη είναι μία μέρα μετά*/
+        IF old_type = 'NIGHT' THEN
+            SET prev_end_dt = DATE_ADD(prev_end_dt, INTERVAL 1 DAY);
+        END IF;
+
+        /*Έλεγχος αν έχουν περάσει τουλάχιστον 8 ώρες*/
+        IF TIMESTAMPDIFF(HOUR, prev_end_dt, new_start_dt) < 8 THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Rest must be at least 8 hours between shifts.';
+        END IF;
+        
+    END IF;
+
+END$$
+
+CREATE TRIGGER trg_night_shifts_limit_bi
+BEFORE INSERT ON shift_assignment
+FOR EACH ROW
+BEGIN
+    DECLARE v_shift_type        VARCHAR(20);
+    DECLARE night_shifts_cnt    INT DEFAULT 0;
+
+    SELECT shift_type INTO v_shift_type
+    FROM department_shift
+    WHERE shift_id = NEW.shift_id;
+    
+    IF v_shift_type = 'NIGHT' THEN
+        SELECT COUNT(*) INTO night_shifts_cnt
+        FROM (
+            SELECT ds.shift_type
+            FROM shift_assignment sa
+            JOIN department_shift ds ON ds.shift_id = sa.shift_id
+            WHERE sa.personnel_amka = NEW.personnel_amka
+                AND sa.shift_id != NEW.shift_id
+            ORDER BY ds.shift_date DESC, ds.start_time DESC
+            LIMIT 3)
+        AS last_3_shifts
+        WHERE shift_type = 'NIGHT';
+
+        IF night_shifts_cnt >= 3 THEN 
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'There must not be more than 3 night shifts in a row.';
+        END IF;
+    END IF;
+END$$
+
+CREATE TRIGGER trg_night_shifts_limit_bu
+BEFORE UPDATE ON shift_assignment
+FOR EACH ROW
+BEGIN
+    DECLARE v_shift_type        VARCHAR(20);
+    DECLARE night_shifts_cnt    INT DEFAULT 0;
+
+    SELECT shift_type INTO v_shift_type
+    FROM department_shift
+    WHERE shift_id = NEW.shift_id;
+    
+    IF v_shift_type = 'NIGHT' THEN
+        SELECT COUNT(*) INTO night_shifts_cnt
+        FROM (
+            SELECT ds.shift_type
+            FROM shift_assignment sa
+            JOIN department_shift ds ON ds.shift_id = sa.shift_id
+            WHERE sa.personnel_amka = NEW.personnel_amka
+                AND sa.shift_id != NEW.shift_id
+            ORDER BY ds.shift_date DESC, ds.start_time DESC
+            LIMIT 3)
+        AS last_3_shifts
+        WHERE shift_type = 'NIGHT';
+
+        IF night_shifts_cnt >= 3 THEN 
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'There must not be more than 3 night shifts in a row.';
+        END IF;
+    END IF;
+END$$
+
+CREATE TRIGGER trg_extra_hospitalization_cost_bu
+BEFORE UPDATE ON hospitalization
+FOR EACH ROW
+BEGIN
+    DECLARE v_basic_cost            NUMERIC(12,2);
+    DECLARE v_mean_duration_days    INT;
+    DECLARE total_days              INT;
+    DECLARE v_extra_daily_cost      NUMERIC(12,2);
+
+
+    SELECT basic_cost, mean_duration_days, extra_daily_cost INTO v_basic_cost, v_mean_duration_days, v_extra_daily_cost
+    FROM ken
+    WHERE ken_code = NEW.ken_code;
+
+    SET total_days = DATEDIFF(NEW.discharge_ts, NEW.admission_ts);
+
+    IF total_days <= v_mean_duration_days THEN
+        SET NEW.total_cost = v_basic_cost;
+    END IF;
+
+    IF total_days > v_mean_duration_days THEN
+        SET NEW.total_cost = v_basic_cost + (total_days - v_mean_duration_days) * v_extra_daily_cost;
+    END IF;
+
+END$$
+
+CREATE PROCEDURE shift_composition(IN shiftID BIGINT)
+BEGIN
+    DECLARE doc_cnt        INT;
+    DECLARE nurse_cnt      INT;
+    DECLARE admin_cnt      INT;
+
+    SELECT COUNT(*) INTO doc_cnt
+    FROM shift_assignment sa
+    JOIN personnel p ON p.amka = sa.personnel_amka
+    WHERE sa.shift_id = shiftID
+        AND p.personnel_type = 'DOCTOR';
+
+    SELECT COUNT(*) INTO nurse_cnt
+    FROM shift_assignment sa
+    JOIN personnel p ON p.amka = sa.personnel_amka
+    WHERE sa.shift_id = shiftID
+        AND p.personnel_type = 'NURSE';
+
+    SELECT COUNT(*) INTO admin_cnt
+    FROM shift_assignment sa
+    JOIN personnel p ON p.amka = sa.personnel_amka
+    WHERE sa.shift_id = shiftID
+        AND p.personnel_type = 'ADMIN';
+
+    IF (doc_cnt < 3 OR nurse_cnt < 6 OR admin_cnt < 2) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Not enough personnel';
+    END IF;
+END$$  
+
+CREATE PROCEDURE FIFO(OUT patientAMKA CHAR(11))
+BEGIN
+    DECLARE v_visit_id  BIGINT;
+
+    SELECT patient_amka, visit_id INTO patientAMKA, v_visit_id
+    FROM emergency_visit em
+    WHERE em.status = 'WAITING'
+    ORDER BY em.emergency_level ASC, em.arrival_ts ASC
+    LIMIT 1;
+
+    IF patientAMKA IS NOT NULL THEN
+        UPDATE emergency_visit 
+        SET status = 'CALLED' 
+        WHERE visit_id = v_visit_id;
+    END IF;
+END$$
+
+CREATE PROCEDURE shift_resident_supervisor(IN shiftID BIGINT)
+BEGIN
+    DECLARE has_resident INT DEFAULT 0;
+    DECLARE has_supervisor INT DEFAULT 0;
+
+    /*Πόσοι ειδικευόμενοι υπάρχουν στη βάρδια*/
+    SELECT COUNT(*) INTO has_resident
+    FROM shift_assignment sa
+    JOIN doctor d ON d.amka = sa.personnel_amka
+    WHERE sa.shift_id = shiftID
+      AND d.doctor_rank = 'RESIDENT';
+
+    /* Πόσοι επιβλέποντες υπάρχουν στη βάρδια */
+    SELECT COUNT(*) INTO has_supervisor
+    FROM shift_assignment sa
+    JOIN doctor d ON d.amka = sa.personnel_amka
+    WHERE sa.shift_id = shiftID
+      AND d.doctor_rank IN ('CONSULTANT_A', 'DIRECTOR');
+
+    /*Αν υπάρχει ειδικευόμενος πρέπει να υπάρχει τουλάχιστον 1 επιβλέπων */
+    IF has_resident > 0 AND has_supervisor = 0 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Resident doctors require at least one Consultant A or Director in the shift.';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_shift_validation_bu
+BEFORE UPDATE ON department_shift
+FOR EACH ROW
+BEGIN
+    IF NEW.shift_status = 'VALID' AND OLD.shift_status != 'VALID' THEN
+        CALL shift_composition(NEW.shift_id);
+        CALL shift_resident_supervisor(NEW.shift_id);
+    END IF;
+END$$
+
+DELIMITER ;
+
+
+
+
+
+
+-- === load.sql ===
+-- Robust generated loader. Run from the bundle/project root.
+-- Example: mysql --local-infile=1 -u root -p < sql/load.sql
+USE yg_eupolis_hospital;
+SET FOREIGN_KEY_CHECKS = 1;
+
+LOAD DATA LOCAL INFILE 'data/reference/icd10_diagnosis.csv'
+INTO TABLE icd10_diagnosis
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(icd10_code, icd10_description);
+
+LOAD DATA LOCAL INFILE 'data/reference/ken.csv'
+INTO TABLE ken
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(ken_code, ken_description, basic_cost, mean_duration_days, extra_daily_cost);
+
+LOAD DATA LOCAL INFILE 'data/reference/procedure_catalog.csv'
+INTO TABLE procedure_catalog
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(procedure_code, procedure_name, procedure_category, required_place_type);
+
+LOAD DATA LOCAL INFILE 'data/reference/lab_test_catalog.csv'
+INTO TABLE lab_test_catalog
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(test_code, test_name, test_type);
+
+LOAD DATA LOCAL INFILE 'data/reference/drug.csv'
+INTO TABLE drug
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(drug_id, drug_name);
+
+LOAD DATA LOCAL INFILE 'data/reference/active_substance.csv'
+INTO TABLE active_substance
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(substance_id, substance_name);
+
+LOAD DATA LOCAL INFILE 'data/reference/drug_active_substance.csv'
+INTO TABLE drug_active_substance
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(drug_id, substance_id);
+
+LOAD DATA LOCAL INFILE 'data/generated/personnel.csv'
+INTO TABLE personnel
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(amka, first_name, last_name, age, email, phone_number, hiring_date, personnel_type);
+
+LOAD DATA LOCAL INFILE 'data/generated/doctor.csv'
+INTO TABLE doctor
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@amka, @license_number, @specialization, @doctor_rank, @supervisor_amka)
+SET
+    amka = @amka,
+    license_number = @license_number,
+    specialization = @specialization,
+    doctor_rank = @doctor_rank,
+    supervisor_amka = NULLIF(@supervisor_amka, '');
+
+LOAD DATA LOCAL INFILE 'data/generated/department.csv'
+INTO TABLE department
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@department_id, @department_name, @description, @bed_capacity, @floor_building, @manager_doctor_amka)
+SET
+    department_id = @department_id,
+    department_name = @department_name,
+    description = NULLIF(@description, ''),
+    bed_capacity = @bed_capacity,
+    floor_building = @floor_building,
+    manager_doctor_amka = NULLIF(@manager_doctor_amka, '');
+
+LOAD DATA LOCAL INFILE 'data/generated/doctor_department.csv'
+INTO TABLE doctor_department
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(doctor_amka, department_id);
+
+LOAD DATA LOCAL INFILE 'data/generated/nurse.csv'
+INTO TABLE nurse
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(amka, nurse_rank, department_id);
+
+LOAD DATA LOCAL INFILE 'data/generated/administrative_staff.csv'
+INTO TABLE administrative_staff
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(amka, admin_role, office_work, department_id);
+
+LOAD DATA LOCAL INFILE 'data/generated/bed.csv'
+INTO TABLE bed
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(bed_id, department_id, bed_type, bed_status);
+
+LOAD DATA LOCAL INFILE 'data/generated/operating_place.csv'
+INTO TABLE operating_place
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(place_id, place_name, place_type, place_status);
+
+LOAD DATA LOCAL INFILE 'data/generated/patient.csv'
+INTO TABLE patient
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@patient_amka, @first_name, @last_name, @father_name, @age, @gender, @weight_kg, @height_cm, @address_line, @phone_number, @email, @profession, @nationality, @insurance_provider)
+SET
+    patient_amka = @patient_amka,
+    first_name = @first_name,
+    last_name = @last_name,
+    father_name = @father_name,
+    age = @age,
+    gender = @gender,
+    weight_kg = NULLIF(@weight_kg, ''),
+    height_cm = NULLIF(@height_cm, ''),
+    address_line = @address_line,
+    phone_number = @phone_number,
+    email = NULLIF(@email, ''),
+    profession = NULLIF(@profession, ''),
+    nationality = NULLIF(@nationality, ''),
+    insurance_provider = @insurance_provider;
+
+LOAD DATA LOCAL INFILE 'data/generated/emergency_contact.csv'
+INTO TABLE emergency_contact
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@patient_amka, @first_name, @last_name, @phone_number, @email)
+SET
+    patient_amka = @patient_amka,
+    first_name = @first_name,
+    last_name = @last_name,
+    phone_number = @phone_number,
+    email = NULLIF(@email, '');
+
+LOAD DATA LOCAL INFILE 'data/generated/department_shift.csv'
+INTO TABLE department_shift
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(shift_id, department_id, shift_date, shift_type, start_time, end_time, shift_status);
+
+LOAD DATA LOCAL INFILE 'data/generated/shift_assignment.csv'
+INTO TABLE shift_assignment
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@shift_id, @personnel_amka, @assigned_role)
+SET
+    shift_id = @shift_id,
+    personnel_amka = @personnel_amka,
+    assigned_role = NULLIF(@assigned_role, '');
+
+-- Mark shifts as valid only after all staff assignments have loaded.
+-- This activates the vol2 shift-composition and resident-supervisor checks.
+UPDATE department_shift
+SET shift_status = 'VALID'
+WHERE shift_status = 'PROCESSING';
+
+LOAD DATA LOCAL INFILE 'data/generated/emergency_visit.csv'
+INTO TABLE emergency_visit
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@visit_id, @patient_amka, @triage_nurse_amka, @arrival_ts, @symptoms, @emergency_level, @service_start_ts, @disposition, @referred_department_id, @discharge_instructions, @status)
+SET
+    visit_id = @visit_id,
+    patient_amka = @patient_amka,
+    triage_nurse_amka = @triage_nurse_amka,
+    arrival_ts = @arrival_ts,
+    symptoms = @symptoms,
+    emergency_level = @emergency_level,
+    service_start_ts = NULLIF(@service_start_ts, ''),
+    disposition = @disposition,
+    referred_department_id = NULLIF(@referred_department_id, ''),
+    discharge_instructions = NULLIF(@discharge_instructions, ''),
+    status = NULLIF(@status, '');
+
+LOAD DATA LOCAL INFILE 'data/generated/hospitalization.csv'
+INTO TABLE hospitalization
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@hosp_id, @patient_amka, @department_id, @bed_id, @ken_code, @admission_ts, @discharge_ts, @admission_icd10_code, @discharge_icd10_code, @total_cost)
+SET
+    hosp_id = @hosp_id,
+    patient_amka = @patient_amka,
+    department_id = @department_id,
+    bed_id = @bed_id,
+    ken_code = @ken_code,
+    admission_ts = @admission_ts,
+    discharge_ts = NULLIF(@discharge_ts, ''),
+    admission_icd10_code = @admission_icd10_code,
+    discharge_icd10_code = NULLIF(@discharge_icd10_code, ''),
+    total_cost = @total_cost;
+
+LOAD DATA LOCAL INFILE 'data/generated/hospitalization_doctor.csv'
+INTO TABLE hospitalization_doctor
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(hosp_id, doctor_amka);
+
+LOAD DATA LOCAL INFILE 'data/generated/lab_test.csv'
+INTO TABLE lab_test
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@test_id, @hosp_id, @test_code, @ordered_by_doctor_amka, @test_datetime, @result_text)
+SET
+    test_id = @test_id,
+    hosp_id = @hosp_id,
+    test_code = @test_code,
+    ordered_by_doctor_amka = @ordered_by_doctor_amka,
+    test_datetime = @test_datetime,
+    result_text = NULLIF(@result_text, '');
+
+LOAD DATA LOCAL INFILE 'data/generated/procedure_event.csv'
+INTO TABLE procedure_event
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(procedure_event_id, hosp_id, procedure_code, place_id, chief_surgeon_amka, start_ts, end_ts, actual_duration_min);
+
+LOAD DATA LOCAL INFILE 'data/generated/procedure_participant.csv'
+INTO TABLE procedure_participant
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(procedure_event_id, personnel_amka);
+
+LOAD DATA LOCAL INFILE 'data/generated/patient_allergy.csv'
+INTO TABLE patient_allergy
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(patient_amka, substance_id);
+
+LOAD DATA LOCAL INFILE 'data/generated/prescription.csv'
+INTO TABLE prescription
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@prescription_id, @hosp_id, @patient_amka, @doctor_amka, @drug_id, @dosage, @frequency, @start_datetime, @end_datetime)
+SET
+    prescription_id = @prescription_id,
+    hosp_id = @hosp_id,
+    patient_amka = @patient_amka,
+    doctor_amka = @doctor_amka,
+    drug_id = @drug_id,
+    dosage = @dosage,
+    frequency = @frequency,
+    start_datetime = @start_datetime,
+    end_datetime = NULLIF(@end_datetime, '');
+
+LOAD DATA LOCAL INFILE 'data/generated/hospitalization_evaluation.csv'
+INTO TABLE hospitalization_evaluation
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@hosp_id, @evaluation_date, @medical_care_score, @nursing_care_score, @cleanliness_score, @food_score, @overall_experience_score, @comments)
+SET
+    hosp_id = @hosp_id,
+    evaluation_date = @evaluation_date,
+    medical_care_score = @medical_care_score,
+    nursing_care_score = @nursing_care_score,
+    cleanliness_score = @cleanliness_score,
+    food_score = @food_score,
+    overall_experience_score = @overall_experience_score,
+    comments = NULLIF(@comments, '');
+
+LOAD DATA LOCAL INFILE 'data/generated/image_asset.csv'
+INTO TABLE image_asset
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(image_id, image_url, alt_text);
+
+LOAD DATA LOCAL INFILE 'data/generated/entity_image.csv'
+INTO TABLE entity_image
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@entity_name, @entity_pk, @image_id, @entity_description)
+SET
+    entity_name = @entity_name,
+    entity_pk = @entity_pk,
+    image_id = @image_id,
+    entity_description = NULLIF(@entity_description, '');
+
+-- === validation.sql ===
+USE yg_eupolis_hospital;
+
+-- Use a fixed dataset date so validation is reproducible on every laptop.
+-- The generated bed statuses are synchronized to this same timestamp.
+SET @validation_as_of_ts = '2026-05-12 12:00:00';
+
+-- Row counts for a quick load check.
+SELECT 'department' AS table_name, COUNT(*) AS rows_count FROM department
+UNION ALL SELECT 'personnel', COUNT(*) FROM personnel
+UNION ALL SELECT 'doctor', COUNT(*) FROM doctor
+UNION ALL SELECT 'nurse', COUNT(*) FROM nurse
+UNION ALL SELECT 'administrative_staff', COUNT(*) FROM administrative_staff
+UNION ALL SELECT 'patient', COUNT(*) FROM patient
+UNION ALL SELECT 'bed', COUNT(*) FROM bed
+UNION ALL SELECT 'department_shift', COUNT(*) FROM department_shift
+UNION ALL SELECT 'shift_assignment', COUNT(*) FROM shift_assignment
+UNION ALL SELECT 'emergency_visit', COUNT(*) FROM emergency_visit
+UNION ALL SELECT 'hospitalization', COUNT(*) FROM hospitalization
+UNION ALL SELECT 'hospitalization_doctor', COUNT(*) FROM hospitalization_doctor
+UNION ALL SELECT 'lab_test', COUNT(*) FROM lab_test
+UNION ALL SELECT 'procedure_catalog', COUNT(*) FROM procedure_catalog
+UNION ALL SELECT 'procedure_event', COUNT(*) FROM procedure_event
+UNION ALL SELECT 'procedure_participant', COUNT(*) FROM procedure_participant
+UNION ALL SELECT 'prescription', COUNT(*) FROM prescription
+UNION ALL SELECT 'hospitalization_evaluation', COUNT(*) FROM hospitalization_evaluation;
+
+-- The following checks should return zero rows.
+
+-- Hospitalizations should have at least one assigned doctor.
+SELECT h.hosp_id
+FROM hospitalization h
+LEFT JOIN hospitalization_doctor hd ON hd.hosp_id = h.hosp_id
+WHERE hd.hosp_id IS NULL;
+
+-- Hospitalizations should not assign a bed from another department.
+SELECT h.hosp_id, h.department_id AS hospitalization_department_id, b.department_id AS bed_department_id
+FROM hospitalization h
+JOIN bed b ON b.bed_id = h.bed_id
+WHERE h.department_id <> b.department_id;
+
+-- Beds should not be double-booked by overlapping hospitalizations.
+SELECT a.hosp_id AS hospitalization_a,
+       b.hosp_id AS hospitalization_b,
+       a.bed_id
+FROM hospitalization a
+JOIN hospitalization b
+  ON a.bed_id = b.bed_id
+ AND a.hosp_id < b.hosp_id
+ AND a.admission_ts < COALESCE(b.discharge_ts, '9999-12-31 23:59:59')
+ AND COALESCE(a.discharge_ts, '9999-12-31 23:59:59') > b.admission_ts;
+
+-- Patients should not have overlapping hospitalizations.
+SELECT a.hosp_id AS hospitalization_a,
+       b.hosp_id AS hospitalization_b,
+       a.patient_amka
+FROM hospitalization a
+JOIN hospitalization b
+  ON a.patient_amka = b.patient_amka
+ AND a.hosp_id < b.hosp_id
+ AND a.admission_ts < COALESCE(b.discharge_ts, '9999-12-31 23:59:59')
+ AND COALESCE(a.discharge_ts, '9999-12-31 23:59:59') > b.admission_ts;
+
+-- Occupied beds should have a current hospitalization, and current hospitalizations should use occupied beds.
+SELECT b.bed_id, b.department_id, b.bed_status
+FROM bed b
+LEFT JOIN hospitalization h
+  ON h.bed_id = b.bed_id
+ AND h.admission_ts <= @validation_as_of_ts
+ AND (h.discharge_ts IS NULL OR h.discharge_ts > @validation_as_of_ts)
+WHERE b.bed_status = 'OCCUPIED'
+  AND h.hosp_id IS NULL;
+
+SELECT h.hosp_id, h.bed_id, b.bed_status
+FROM hospitalization h
+JOIN bed b ON b.bed_id = h.bed_id
+WHERE h.admission_ts <= @validation_as_of_ts
+  AND (h.discharge_ts IS NULL OR h.discharge_ts > @validation_as_of_ts)
+  AND b.bed_status <> 'OCCUPIED';
+
+-- Prescriptions should not conflict with patient allergies.
+SELECT p.prescription_id, p.patient_amka, p.drug_id, pa.substance_id
+FROM prescription p
+JOIN drug_active_substance das ON das.drug_id = p.drug_id
+JOIN patient_allergy pa
+  ON pa.patient_amka = p.patient_amka
+ AND pa.substance_id = das.substance_id;
+
+-- Prescriptions should stay within their hospitalization period.
+SELECT p.prescription_id, p.hosp_id, p.start_datetime, p.end_datetime, h.admission_ts, h.discharge_ts
+FROM prescription p
+JOIN hospitalization h
+  ON h.hosp_id = p.hosp_id
+ AND h.patient_amka = p.patient_amka
+WHERE p.start_datetime < h.admission_ts
+   OR (h.discharge_ts IS NOT NULL AND p.start_datetime > h.discharge_ts)
+   OR (p.end_datetime IS NOT NULL AND p.end_datetime < h.admission_ts)
+   OR (p.end_datetime IS NOT NULL AND h.discharge_ts IS NOT NULL AND p.end_datetime > h.discharge_ts);
+
+-- Procedure rooms should not have overlapping events.
+SELECT a.procedure_event_id AS event_a,
+       b.procedure_event_id AS event_b,
+       a.place_id
+FROM procedure_event a
+JOIN procedure_event b
+  ON a.place_id = b.place_id
+ AND a.procedure_event_id < b.procedure_event_id
+ AND a.start_ts < b.end_ts
+ AND a.end_ts > b.start_ts;
+
+-- Procedure events should stay inside their hospitalization period.
+SELECT pe.procedure_event_id, pe.hosp_id, pe.start_ts, pe.end_ts, h.admission_ts, h.discharge_ts
+FROM procedure_event pe
+JOIN hospitalization h ON h.hosp_id = pe.hosp_id
+WHERE pe.start_ts < h.admission_ts
+   OR (h.discharge_ts IS NOT NULL AND pe.end_ts > h.discharge_ts);
+
+-- Procedure catalog rows should include valid category and place data.
+SELECT procedure_code, procedure_category, required_place_type
+FROM procedure_catalog
+WHERE procedure_category NOT IN ('SURGICAL', 'DIAGNOSTIC', 'THERAPEUTIC')
+   OR required_place_type NOT IN ('OPERATING_ROOM', 'PROCEDURE_ROOM');
+
+-- Department shifts should meet the required staffing coverage.
+SELECT ds.shift_id,
+       ds.department_id,
+       ds.shift_date,
+       ds.shift_type,
+       SUM(p.personnel_type = 'DOCTOR') AS doctor_count,
+       SUM(p.personnel_type = 'NURSE') AS nurse_count,
+       SUM(p.personnel_type = 'ADMIN') AS admin_count
+FROM department_shift ds
+LEFT JOIN shift_assignment sa ON sa.shift_id = ds.shift_id
+LEFT JOIN personnel p ON p.amka = sa.personnel_amka
+GROUP BY ds.shift_id, ds.department_id, ds.shift_date, ds.shift_type
+HAVING doctor_count < 3
+    OR nurse_count < 6
+    OR admin_count < 2;
+
+-- Emergency service timestamps should be chronological.
+SELECT visit_id
+FROM emergency_visit
+WHERE service_start_ts IS NOT NULL
+  AND service_start_ts < arrival_ts;
+
+-- Emergency disposition/referral consistency.
+SELECT visit_id, disposition, referred_department_id
+FROM emergency_visit
+WHERE (disposition = 'HOSPITALIZED' AND referred_department_id IS NULL)
+   OR (disposition = 'DISCHARGED' AND referred_department_id IS NOT NULL);

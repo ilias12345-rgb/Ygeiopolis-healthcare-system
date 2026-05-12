@@ -1,0 +1,305 @@
+Ygeiopolis Healthcare System - Detailed Project Report Outline 
+
+Ygeiopolis Healthcare System - Detailed Project Report Outline
+
+Suggested structure and talking points for docs/report.pdf . 
+
+The final report should not only show that the database works. It should explain why the schema
+was designed this way, how correctness is enforced, how data was produced, and how the final
+queries were validated and optimized.
+
+1. Cover Page And Executive Summary
+
+Project title: Ygeiopolis Healthcare System.
+
+Course, academic year, team members, repository link, and submission date.
+
+Short summary of what was implemented: schema, data loader, generator, constraints, views, triggers, stored procedures, validation, and final queries.
+
+One paragraph explaining that the project targets MySQL/MariaDB and avoids SQL enums, arrays, JSON, and XML as required.
+
+2. Problem Understanding
+
+This section should map the assignment requirements to the final database model.
+
+Requirement Area 
+How We Cover It 
+
+Hospital structure 
+Departments, beds, operating/procedure rooms, department managers. 
+
+Personnel 
+Common personnel table plus doctor, nurse, and administrative staff subtype tables. 
+
+Shift scheduling 
+Daily department shifts, shift assignments, monthly limits, rest-time rules, night-shift limits, and coverage reporting. 
+
+Emergency triage 
+Emergency visits with urgency level, timestamps, disposition, referral department, and FIFO queue view. 
+
+Hospitalizations 
+Patient, department, bed, admission/discharge dates, ICD-10 diagnoses, KEN code, and computed cost. 
+
+Clinical work 
+Lab tests, medical procedure events, participants, prescriptions, allergies, drugs, active substances. 
+
+Patient evaluations 
+Likert-score evaluation table linked to completed hospitalizations. 
+
+Website image support 
+Generic image_asset and entity_image tables. 
+
+3. Assumptions
+
+Include the same assumption table from README.md , then briefly justify the most important ones.
+
+AMKA is stored as CHAR(11) to preserve leading zeroes.
+
+Controlled values use VARCHAR plus CHECK , not SQL enum types.
+
+Procedure standard cost and duration are deterministic estimates when the official procedure source lacks complete clean values.
+
+Generated operational data is synthetic; official reference data is preferred for ICD-10, KEN, procedure catalog, and EMA drugs.
+
+Emergency queue is urgency level first, FIFO by arrival time for equal urgency.
+
+4. ER Diagram Explanation
+
+Insert diagrams/er.pdf or a screenshot of it, then explain the main entities and relationships.
+
+Points To Explain
+
+Why staff has a supertype/subtype design: shared fields live once in personnel , while role-specific fields stay in separate tables.
+
+Why doctors and departments are many-to-many: one doctor can belong to more than one department.
+
+Why patients and hospitalizations are one-to-many: each patient can have multiple hospital stays.
+
+Why prescriptions connect hospitalization, patient, doctor, and drug: this preserves who ordered what and during which stay.
+
+Why active substances are modeled separately from drugs: allergy checks must compare patient allergies to drug ingredients.
+
+Why procedure participants are separate from procedure events: a procedure has one chief surgeon and multiple assistants/nurses.
+
+5. Relational Schema Explanation
+
+Insert diagrams/relational.pdf , then summarize the tables by module.
+
+Module 
+Tables 
+Design Reason 
+
+Organization 
+department , bed , operating_place 
+Stores the physical and administrative hospital structure. 
+
+Personnel 
+personnel , doctor , nurse , administrative_staff , doctor_department 
+Separates shared staff data from subtype-specific fields and supports many-to-many doctor membership. 
+
+Scheduling 
+department_shift , shift_assignment 
+Keeps shifts reusable and allows multiple staff members per shift. 
+
+Patient flow 
+patient , emergency_contact , emergency_visit , hospitalization 
+Covers emergency triage, admission, bed assignment, discharge, and history. 
+
+Clinical data 
+icd10_diagnosis , ken , lab_test , procedure_event , prescription 
+Models diagnosis, costing, tests, procedures, and medication orders. 
+
+6. Constraints And Data Correctness
+
+Explain that correctness is enforced close to the data, not only by application code.
+
+Primary And Foreign Keys
+
+Primary keys uniquely identify each entity.
+
+Foreign keys enforce relationships such as hospitalization-to-patient, bed-to-department, prescription-to-drug, and doctor-to-personnel.
+
+Cascading deletes are used only where child rows should disappear with the parent, for example subtype rows or join rows.
+
+Unique And Check Constraints
+
+Email/license/department names are unique where needed.
+
+AMKA, age, gender, scores, costs, shift type, bed status, and procedure category are checked at table level.
+
+Emergency disposition and referral department must agree: hospitalized visits have a referral, discharged visits do not.
+
+7. Why We Used Triggers
+
+Triggers are used for rules that cannot be expressed cleanly with simple foreign keys or check constraints.
+
+Trigger Area 
+Why It Is Needed 
+
+Doctor supervision 
+Checks resident/director rules and prevents circular supervision chains. 
+
+Prescription allergy prevention 
+Compares patient allergies with every active substance contained in the drug. 
+
+Procedure overlap prevention 
+Blocks two procedures in the same room or with the same chief surgeon at overlapping times. 
+
+Procedure place type 
+Ensures surgical/diagnostic/therapeutic procedure requirements match the chosen room type. 
+
+Shift rules 
+Enforces monthly shift limits, rest time, resident supervision, and night-shift limits automatically. 
+
+Hospitalization overlap rules 
+Prevents the same bed or patient from being assigned to overlapping hospitalizations. 
+
+KEN cost calculation 
+Automatically recalculates total hospitalization cost when KEN or stay dates change. 
+
+8. Why We Used Stored Procedures
+
+Stored procedures group common workflows into safe database operations. This is useful because the assignment describes operational actions, not only static tables.
+
+sp_admit_patient allocates an available bed, inserts the hospitalization, links the primary doctor, and marks the bed occupied.
+
+sp_discharge_patient records discharge details, recalculates cost through triggers, and releases the bed.
+
+sp_prescribe_drug_safely centralizes allergy checking before a prescription is inserted.
+
+sp_schedule_procedure creates a procedure event while triggers enforce room, timing, surgeon, and place-type rules.
+
+sp_assign_staff_to_shift inserts shift assignments while trigger rules enforce limits.
+
+sp_start_emergency_service and sp_finish_emergency_service support emergency workflow state changes.
+
+Admission, discharge, and emergency-service procedures use transactions and row locks so that multi-step operations commit or roll back together. For example, admission should never insert a hospitalization without also assigning the primary doctor and updating the bed status.
+
+9. Views And Why They Help
+
+View 
+Purpose 
+
+v_emergency_fifo_queue 
+Shows unstarted emergency visits in urgency/FIFO order. 
+
+v_current_bed_status 
+Combines bed table status with active hospitalization context. 
+
+v_active_hospitalizations 
+Readable list of currently admitted patients. 
+
+v_patient_history 
+Simplifies patient history queries with diagnosis and KEN details. 
+
+v_doctor_workload 
+Summarizes hospitalizations, chief-surgeon procedures, and shift counts per doctor. 
+
+v_prescription_substances 
+Expands prescriptions to active substances for allergy and drug-pair queries. 
+
+v_shift_roster and v_shift_coverage 
+Make roster reporting and coverage validation easier to read. 
+
+10. Index Strategy
+
+Explain that indexes were chosen based on expected query filters, joins, grouping, and trigger lookups.
+
+Doctor indexes support specialization/rank filtering and supervision hierarchy traversal.
+
+Hospitalization indexes support department/year/KEN, patient history, diagnosis category, and cost queries.
+
+Procedure indexes support chief surgeon counts and overlap detection.
+
+Prescription and drug-substance indexes support patient medication history and active-substance pair queries.
+
+Shift indexes support staff availability and weekly roster queries.
+
+After Q01-Q15 are finalized, run EXPLAIN and remove indexes that do not support the final workload.
+
+11. Data Generation And Loading
+
+This section should explain both official references and synthetic operational data.
+
+Official or improved reference data is preferred for ICD-10, KEN, ICD10-KEN mapping, and the procedure catalog.
+
+EMA Article 57 can be used for drug data if supplied. Otherwise, the generator creates a marked demo fallback.
+
+Synthetic data is deterministic and query-driven, so Q01-Q15 have enough matching rows.
+
+The generator produces a portable bundle with sql/install.sql , sql/load.sql , sql/setup.sql , CSV files, and metadata.
+
+The default larger dataset supports clearer query plans for EXPLAIN comparisons.
+
+12. Validation Strategy
+
+Include screenshots or copied output from sql/validation.sql .
+
+Row counts prove that required scale is met.
+
+Orphan and consistency checks prove key relationships are coherent.
+
+Bed and patient overlap checks prove hospitalization scheduling correctness.
+
+Prescription and procedure timing checks prove clinical events remain inside hospitalization dates.
+
+Shift coverage checks prove the required staffing rule is satisfied.
+
+Emergency timestamp/referral checks prove triage workflow consistency.
+
+13. Final Query Section
+
+For each Q01-Q15, include:
+
+Short description of the question.
+
+The SQL file name, for example sql/Q01.sql .
+
+Tables/views used.
+
+One screenshot or copied sample output.
+
+Any important assumptions, such as the date range used for "current year".
+
+14. Required Optimization Section For Q4 And Q6
+
+The assignment specifically asks for extra analysis for Q4 and Q6. Each of the two sections should contain:
+
+Required Item 
+What To Include 
+
+Original query 
+The clean SQL query as submitted. 
+
+Original plan 
+EXPLAIN or EXPLAIN ANALYZE output. 
+
+Alternative query 
+A version using FORCE INDEX or another supported hint. 
+
+Alternative plan 
+The plan for the forced/hinted version. 
+
+Comparison 
+Estimated cost, rows examined, actual runtime if available, and whether the hint helped. 
+
+Conclusion 
+Three to five sentences explaining why the chosen plan is better or why the optimizer's default plan should be trusted. 
+
+15. Academic Integrity And AI Use Note
+
+The assignment requires explicit mention if AI/LLM tools were used. Add a short, honest note such as:
+
+OpenAI Codex was used as an assistant for schema review, SQL hardening, validation planning, documentation cleanup, and generation of team planning material. The final design decisions, SQL execution, query outputs, and submitted report were reviewed and approved by the team. 
+
+16. Final Appendix
+
+Installation commands.
+
+Dataset row-count summary.
+
+Important validation outputs.
+
+Index list and short justification.
+
+Any known limitations, for example demo drug fallback if official EMA data is not included.

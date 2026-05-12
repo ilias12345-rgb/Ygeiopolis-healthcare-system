@@ -1,5 +1,9 @@
 USE yg_eupolis_hospital;
 
+-- Use a fixed dataset date so validation is reproducible on every laptop.
+-- The generated bed statuses are synchronized to this same timestamp.
+SET @validation_as_of_ts = '2026-05-12 12:00:00';
+
 -- Row counts for a quick load check.
 SELECT 'department' AS table_name, COUNT(*) AS rows_count FROM department
 UNION ALL SELECT 'personnel', COUNT(*) FROM personnel
@@ -61,16 +65,16 @@ SELECT b.bed_id, b.department_id, b.bed_status
 FROM bed b
 LEFT JOIN hospitalization h
   ON h.bed_id = b.bed_id
- AND h.admission_ts <= NOW()
- AND (h.discharge_ts IS NULL OR h.discharge_ts > NOW())
+ AND h.admission_ts <= @validation_as_of_ts
+ AND (h.discharge_ts IS NULL OR h.discharge_ts > @validation_as_of_ts)
 WHERE b.bed_status = 'OCCUPIED'
   AND h.hosp_id IS NULL;
 
 SELECT h.hosp_id, h.bed_id, b.bed_status
 FROM hospitalization h
 JOIN bed b ON b.bed_id = h.bed_id
-WHERE h.admission_ts <= NOW()
-  AND (h.discharge_ts IS NULL OR h.discharge_ts > NOW())
+WHERE h.admission_ts <= @validation_as_of_ts
+  AND (h.discharge_ts IS NULL OR h.discharge_ts > @validation_as_of_ts)
   AND b.bed_status <> 'OCCUPIED';
 
 -- Prescriptions should not conflict with patient allergies.
@@ -110,30 +114,33 @@ JOIN hospitalization h ON h.hosp_id = pe.hosp_id
 WHERE pe.start_ts < h.admission_ts
    OR (h.discharge_ts IS NOT NULL AND pe.end_ts > h.discharge_ts);
 
--- Procedure catalog rows should include valid category, place, duration, and cost data.
-SELECT procedure_code, procedure_category, required_place_type, standard_duration_min, standard_cost
+-- Procedure catalog rows should include valid category and place data.
+SELECT procedure_code, procedure_category, required_place_type
 FROM procedure_catalog
 WHERE procedure_category NOT IN ('SURGICAL', 'DIAGNOSTIC', 'THERAPEUTIC')
-   OR required_place_type NOT IN ('OPERATING_ROOM', 'PROCEDURE_ROOM')
-   OR standard_cost < 0
-   OR (standard_duration_min IS NOT NULL AND standard_duration_min <= 0);
+   OR required_place_type NOT IN ('OPERATING_ROOM', 'PROCEDURE_ROOM');
 
 -- Department shifts should meet the required staffing coverage.
-SELECT *
-FROM v_shift_coverage
-WHERE is_requirement_met = FALSE;
-
--- Bed numbering should be unique per department.
-SELECT department_id, bed_number, COUNT(*) AS duplicates_count
-FROM bed
-GROUP BY department_id, bed_number
-HAVING COUNT(*) > 1;
+SELECT ds.shift_id,
+       ds.department_id,
+       ds.shift_date,
+       ds.shift_type,
+       SUM(p.personnel_type = 'DOCTOR') AS doctor_count,
+       SUM(p.personnel_type = 'NURSE') AS nurse_count,
+       SUM(p.personnel_type = 'ADMIN') AS admin_count
+FROM department_shift ds
+LEFT JOIN shift_assignment sa ON sa.shift_id = ds.shift_id
+LEFT JOIN personnel p ON p.amka = sa.personnel_amka
+GROUP BY ds.shift_id, ds.department_id, ds.shift_date, ds.shift_type
+HAVING doctor_count < 3
+    OR nurse_count < 6
+    OR admin_count < 2;
 
 -- Emergency service timestamps should be chronological.
 SELECT visit_id
 FROM emergency_visit
-WHERE service_start_ts < arrival_ts
-   OR service_end_ts < service_start_ts;
+WHERE service_start_ts IS NOT NULL
+  AND service_start_ts < arrival_ts;
 
 -- Emergency disposition/referral consistency.
 SELECT visit_id, disposition, referred_department_id

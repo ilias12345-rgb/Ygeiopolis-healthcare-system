@@ -606,6 +606,49 @@ JOIN drug dr ON pr.drug_id = dr.drug_id
 JOIN drug_active_substance das ON dr.drug_id = das.drug_id
 JOIN active_substance a ON das.substance_id = a.substance_id;
 
+CREATE VIEW shift_staff AS
+SELECT
+    ds.shift_id,
+    ds.department_id,
+    d.department_name,
+    ds.shift_date,
+    ds.shift_type,
+    ds.start_time,
+    ds.end_time,
+    ds.shift_status,
+    sa.personnel_amka,
+    p.first_name,
+    p.last_name,
+    p.personnel_type,
+    sa.assigned_role
+FROM department_shift ds
+JOIN department d ON d.department_id = ds.department_id
+JOIN shift_assignment sa ON sa.shift_id = ds.shift_id
+JOIN personnel p ON p.amka = sa.personnel_amka;
+
+CREATE VIEW doctor_procedure AS
+SELECT
+    pe.procedure_event_id,
+    pe.hosp_id,
+    pe.procedure_code,
+    pc.procedure_name,
+    pc.procedure_category,
+    pe.chief_surgeon_amka AS doctor_amka,
+    p.first_name,
+    p.last_name,
+    d.specialization,
+    d.doctor_rank,
+    pe.place_id,
+    op.place_name,
+    pe.start_ts,
+    pe.end_ts,
+    pe.actual_duration_min
+FROM procedure_event pe
+JOIN procedure_catalog pc ON pc.procedure_code = pe.procedure_code
+JOIN doctor d ON d.amka = pe.chief_surgeon_amka
+JOIN personnel p ON p.amka = d.amka
+JOIN operating_place op ON op.place_id = pe.place_id;
+
 
 /* Triggers for key business rules */
 
@@ -1212,13 +1255,13 @@ BEGIN
 
     SELECT COUNT(*) INTO doc_cnt
     FROM shift_assignment sa
-    JOIN personnel p ON p.personnel_amka = sa.personnel_amka
+    JOIN personnel p ON p.amka = sa.personnel_amka
     WHERE sa.shift_id = shiftID
         AND p.personnel_type = 'DOCTOR';
 
     SELECT COUNT(*) INTO nurse_cnt
     FROM shift_assignment sa
-    JOIN personnel p ON p.personnel_amka = sa.personnel_amka
+    JOIN personnel p ON p.amka = sa.personnel_amka
     WHERE sa.shift_id = shiftID
         AND p.personnel_type = 'NURSE';
 
@@ -1288,7 +1331,6 @@ BEGIN
 END$$
 
 DELIMITER ;
-
 
 
 

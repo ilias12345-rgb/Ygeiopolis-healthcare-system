@@ -6,15 +6,17 @@ This folder contains the database-facing part of the Ygeiopolis Healthcare Syste
 
 - `install.sql`: portable entrypoint for creating the schema.
 - `schema.sql`: creates the `yg_eupolis_hospital` database, tables, constraints, indexes, views, triggers, and stored procedures.
+- `DB_ygeiopolis_new2.sql`: the vol2 schema source kept for clarity; `schema.sql` and `install.sql` currently match it.
 - `load.sql`: portable relative-path loader for generated CSV data under `data/reference` and `data/generated`.
 - `setup.sql`: portable schema + load + validation script. Run it from the project or generated bundle root.
 - `validation.sql`: sanity checks to run after loading data.
 
 ## Execution Order
 
-1. Enable `LOCAL INFILE` in MySQL/MySQL Workbench.
-2. Put the generated CSV folders at `data/reference` and `data/generated`.
-3. Run `setup.sql` from the project or bundle root.
+1. Start MySQL/MariaDB.
+2. Enable `LOCAL INFILE` in MySQL/MySQL Workbench.
+3. Generate the data bundle with `scripts/generate_data.py`, or otherwise make sure the working folder contains `data/reference` and `data/generated`.
+4. Run `setup.sql` from the project root or from the generated bundle root.
 
 Example:
 
@@ -36,7 +38,7 @@ mysql -u root -p yg_eupolis_hospital < sql/validation.sql
 - Personnel: parent `personnel` table plus doctor/nurse/admin specializations.
 - Scheduling: department shifts and shift assignments.
 - Patient care: emergency visits and hospitalizations.
-- Clinical data: ICD-10 diagnoses, KEN costing, procedure duration/cost definitions, lab tests, prescriptions, allergies.
+- Clinical data: ICD-10 diagnoses, KEN costing, procedure catalog, lab tests, prescriptions, allergies.
 - Support data: evaluations and image metadata.
 
 ## Business Rules In SQL
@@ -47,8 +49,6 @@ The schema intentionally uses triggers for rules that are difficult to express w
 - prescription allergy prevention;
 - procedure room and staff overlap prevention;
 - procedure room type validation;
-- hospitalization bed/patient overlap prevention;
-- prescription and procedure timing inside the hospitalization period;
 - shift supervision, monthly limits, rest time, and night-shift limits;
 - automatic hospitalization cost calculation from KEN values.
 
@@ -56,14 +56,13 @@ The schema intentionally uses triggers for rules that are difficult to express w
 
 The schema includes reusable views for common reporting work:
 
-- emergency FIFO queue;
-- current bed status and department occupancy;
-- active hospitalizations and patient history;
-- doctor workload and shift roster;
-- prescription-substance analysis for allergy checks.
+- `patient_history` for hospitalization-patient reporting;
+- `prescription_substances` for drug/substance reporting;
+- `shift_staff` for department shift staffing;
+- `doctor_procedure` for chief doctor procedure reporting.
 
-It also includes stored procedures for common workflows: emergency queue handling, admission, discharge, safe prescription, procedure scheduling, participant assignment, shift assignment, and post-discharge evaluation. Admission, discharge, and emergency-service procedures use explicit transactions so multi-step state changes commit or roll back together.
+It also includes stored procedures for FIFO emergency queue handling and shift validation: `FIFO`, `shift_composition`, and `shift_resident_supervisor`.
 
 ## Notes
 
-There are no machine-specific absolute paths in the load/setup scripts. If loading from MySQL Workbench, open the project or generated bundle as the working folder before running `sql/setup.sql`, or run the three manual commands above from a terminal.
+There are no machine-specific absolute paths in the load/setup scripts. The relative `LOAD DATA LOCAL INFILE` paths are resolved from the folder where the MySQL client is started, so start MySQL from the repository root or from the generated bundle root.

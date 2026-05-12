@@ -19,21 +19,13 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (ken_code, ken_description, basic_cost, mean_duration_days, extra_daily_cost);
 
-LOAD DATA LOCAL INFILE 'data/reference/icd10_ken_map.csv'
-INTO TABLE icd10_ken_map
-CHARACTER SET utf8mb4
-FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
-LINES TERMINATED BY '\n'
-IGNORE 1 LINES
-(mdc_code, ken_code, icd10_code_prefix);
-
 LOAD DATA LOCAL INFILE 'data/reference/procedure_catalog.csv'
 INTO TABLE procedure_catalog
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
 IGNORE 1 LINES
-(procedure_code, procedure_name, procedure_category, required_place_type, standard_duration_min, standard_cost);
+(procedure_code, procedure_name, procedure_category, required_place_type);
 
 LOAD DATA LOCAL INFILE 'data/reference/lab_test_catalog.csv'
 INTO TABLE lab_test_catalog
@@ -134,7 +126,7 @@ CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
 IGNORE 1 LINES
-(bed_id, department_id, bed_number, bed_type, bed_status);
+(bed_id, department_id, bed_type, bed_status);
 
 LOAD DATA LOCAL INFILE 'data/generated/operating_place.csv'
 INTO TABLE operating_place
@@ -187,7 +179,7 @@ CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
 IGNORE 1 LINES
-(shift_id, department_id, shift_date, shift_type, start_time, end_time);
+(shift_id, department_id, shift_date, shift_type, start_time, end_time, shift_status);
 
 LOAD DATA LOCAL INFILE 'data/generated/shift_assignment.csv'
 INTO TABLE shift_assignment
@@ -201,13 +193,19 @@ SET
     personnel_amka = @personnel_amka,
     assigned_role = NULLIF(@assigned_role, '');
 
+-- Mark shifts as valid only after all staff assignments have loaded.
+-- This activates the vol2 shift-composition and resident-supervisor checks.
+UPDATE department_shift
+SET shift_status = 'VALID'
+WHERE shift_status = 'PROCESSING';
+
 LOAD DATA LOCAL INFILE 'data/generated/emergency_visit.csv'
 INTO TABLE emergency_visit
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
 IGNORE 1 LINES
-(@visit_id, @patient_amka, @triage_nurse_amka, @arrival_ts, @symptoms, @emergency_level, @service_start_ts, @service_end_ts, @disposition, @referred_department_id, @discharge_instructions)
+(@visit_id, @patient_amka, @triage_nurse_amka, @arrival_ts, @symptoms, @emergency_level, @service_start_ts, @disposition, @referred_department_id, @discharge_instructions, @status)
 SET
     visit_id = @visit_id,
     patient_amka = @patient_amka,
@@ -216,10 +214,10 @@ SET
     symptoms = @symptoms,
     emergency_level = @emergency_level,
     service_start_ts = NULLIF(@service_start_ts, ''),
-    service_end_ts = NULLIF(@service_end_ts, ''),
     disposition = @disposition,
     referred_department_id = NULLIF(@referred_department_id, ''),
-    discharge_instructions = NULLIF(@discharge_instructions, '');
+    discharge_instructions = NULLIF(@discharge_instructions, ''),
+    status = NULLIF(@status, '');
 
 LOAD DATA LOCAL INFILE 'data/generated/hospitalization.csv'
 INTO TABLE hospitalization
@@ -227,13 +225,12 @@ CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
 IGNORE 1 LINES
-(@hosp_id, @patient_amka, @department_id, @bed_id, @emergency_visit_id, @ken_code, @admission_ts, @discharge_ts, @admission_icd10_code, @discharge_icd10_code, @total_cost)
+(@hosp_id, @patient_amka, @department_id, @bed_id, @ken_code, @admission_ts, @discharge_ts, @admission_icd10_code, @discharge_icd10_code, @total_cost)
 SET
     hosp_id = @hosp_id,
     patient_amka = @patient_amka,
     department_id = @department_id,
     bed_id = @bed_id,
-    emergency_visit_id = NULLIF(@emergency_visit_id, ''),
     ken_code = @ken_code,
     admission_ts = @admission_ts,
     discharge_ts = NULLIF(@discharge_ts, ''),
@@ -247,7 +244,7 @@ CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
 IGNORE 1 LINES
-(hosp_id, doctor_amka, doctor_role, is_primary);
+(hosp_id, doctor_amka);
 
 LOAD DATA LOCAL INFILE 'data/generated/lab_test.csv'
 INTO TABLE lab_test
@@ -255,17 +252,14 @@ CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
 IGNORE 1 LINES
-(@test_id, @hosp_id, @test_code, @ordered_by_doctor_amka, @test_datetime, @result_text, @result_numeric, @result_unit, @cost)
+(@test_id, @hosp_id, @test_code, @ordered_by_doctor_amka, @test_datetime, @result_text)
 SET
     test_id = @test_id,
     hosp_id = @hosp_id,
     test_code = @test_code,
     ordered_by_doctor_amka = @ordered_by_doctor_amka,
     test_datetime = @test_datetime,
-    result_text = NULLIF(@result_text, ''),
-    result_numeric = NULLIF(@result_numeric, ''),
-    result_unit = NULLIF(@result_unit, ''),
-    cost = @cost;
+    result_text = NULLIF(@result_text, '');
 
 LOAD DATA LOCAL INFILE 'data/generated/procedure_event.csv'
 INTO TABLE procedure_event
@@ -281,7 +275,7 @@ CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
 IGNORE 1 LINES
-(procedure_event_id, personnel_amka, participant_role);
+(procedure_event_id, personnel_amka);
 
 LOAD DATA LOCAL INFILE 'data/generated/patient_allergy.csv'
 INTO TABLE patient_allergy
