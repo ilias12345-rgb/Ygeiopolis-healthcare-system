@@ -1,3 +1,11 @@
+-- Portable full setup script. Run from the project or generated bundle root:
+-- mysql --local-infile=1 -u root -p < sql/setup.sql
+--
+-- The relative LOAD DATA paths in this file expect:
+-- data/reference/*.csv
+-- data/generated/*.csv
+
+-- === install.sql ===
 DROP DATABASE IF EXISTS yg_eupolis_hospital;
 CREATE DATABASE yg_eupolis_hospital
   CHARACTER SET utf8mb4
@@ -1332,7 +1340,497 @@ END$$
 
 DELIMITER ;
 
+-- === load.sql ===
+-- Robust generated loader. Run from the bundle/project root.
+-- Example: mysql --local-infile=1 -u root -p < sql/load.sql
+USE yg_eupolis_hospital;
+SET FOREIGN_KEY_CHECKS = 1;
 
+LOAD DATA LOCAL INFILE 'data/reference/icd10_diagnosis.csv'
+INTO TABLE icd10_diagnosis
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(icd10_code, icd10_description);
 
+LOAD DATA LOCAL INFILE 'data/reference/ken.csv'
+INTO TABLE ken
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(ken_code, ken_description, basic_cost, mean_duration_days, extra_daily_cost);
 
+LOAD DATA LOCAL INFILE 'data/reference/procedure_catalog.csv'
+INTO TABLE procedure_catalog
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(procedure_code, procedure_name, procedure_category, required_place_type);
 
+LOAD DATA LOCAL INFILE 'data/reference/lab_test_catalog.csv'
+INTO TABLE lab_test_catalog
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(test_code, test_name, test_type);
+
+LOAD DATA LOCAL INFILE 'data/reference/drug.csv'
+INTO TABLE drug
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(drug_id, drug_name);
+
+LOAD DATA LOCAL INFILE 'data/reference/active_substance.csv'
+INTO TABLE active_substance
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(substance_id, substance_name);
+
+LOAD DATA LOCAL INFILE 'data/reference/drug_active_substance.csv'
+INTO TABLE drug_active_substance
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(drug_id, substance_id);
+
+LOAD DATA LOCAL INFILE 'data/generated/personnel.csv'
+INTO TABLE personnel
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(amka, first_name, last_name, age, email, phone_number, hiring_date, personnel_type);
+
+LOAD DATA LOCAL INFILE 'data/generated/doctor.csv'
+INTO TABLE doctor
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@amka, @license_number, @specialization, @doctor_rank, @supervisor_amka)
+SET
+    amka = @amka,
+    license_number = @license_number,
+    specialization = @specialization,
+    doctor_rank = @doctor_rank,
+    supervisor_amka = NULLIF(@supervisor_amka, '');
+
+LOAD DATA LOCAL INFILE 'data/generated/department.csv'
+INTO TABLE department
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@department_id, @department_name, @description, @bed_capacity, @floor_building, @manager_doctor_amka)
+SET
+    department_id = @department_id,
+    department_name = @department_name,
+    description = NULLIF(@description, ''),
+    bed_capacity = @bed_capacity,
+    floor_building = @floor_building,
+    manager_doctor_amka = NULLIF(@manager_doctor_amka, '');
+
+LOAD DATA LOCAL INFILE 'data/generated/doctor_department.csv'
+INTO TABLE doctor_department
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(doctor_amka, department_id);
+
+LOAD DATA LOCAL INFILE 'data/generated/nurse.csv'
+INTO TABLE nurse
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(amka, nurse_rank, department_id);
+
+LOAD DATA LOCAL INFILE 'data/generated/administrative_staff.csv'
+INTO TABLE administrative_staff
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(amka, admin_role, office_work, department_id);
+
+LOAD DATA LOCAL INFILE 'data/generated/bed.csv'
+INTO TABLE bed
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(bed_id, department_id, bed_type, bed_status);
+
+LOAD DATA LOCAL INFILE 'data/generated/operating_place.csv'
+INTO TABLE operating_place
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(place_id, place_name, place_type, place_status);
+
+LOAD DATA LOCAL INFILE 'data/generated/patient.csv'
+INTO TABLE patient
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@patient_amka, @first_name, @last_name, @father_name, @age, @gender, @weight_kg, @height_cm, @address_line, @phone_number, @email, @profession, @nationality, @insurance_provider)
+SET
+    patient_amka = @patient_amka,
+    first_name = @first_name,
+    last_name = @last_name,
+    father_name = @father_name,
+    age = @age,
+    gender = @gender,
+    weight_kg = NULLIF(@weight_kg, ''),
+    height_cm = NULLIF(@height_cm, ''),
+    address_line = @address_line,
+    phone_number = @phone_number,
+    email = NULLIF(@email, ''),
+    profession = NULLIF(@profession, ''),
+    nationality = NULLIF(@nationality, ''),
+    insurance_provider = @insurance_provider;
+
+LOAD DATA LOCAL INFILE 'data/generated/emergency_contact.csv'
+INTO TABLE emergency_contact
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@patient_amka, @first_name, @last_name, @phone_number, @email)
+SET
+    patient_amka = @patient_amka,
+    first_name = @first_name,
+    last_name = @last_name,
+    phone_number = @phone_number,
+    email = NULLIF(@email, '');
+
+LOAD DATA LOCAL INFILE 'data/generated/department_shift.csv'
+INTO TABLE department_shift
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(shift_id, department_id, shift_date, shift_type, start_time, end_time, shift_status);
+
+LOAD DATA LOCAL INFILE 'data/generated/shift_assignment.csv'
+INTO TABLE shift_assignment
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@shift_id, @personnel_amka, @assigned_role)
+SET
+    shift_id = @shift_id,
+    personnel_amka = @personnel_amka,
+    assigned_role = NULLIF(@assigned_role, '');
+
+-- Mark shifts as valid only after all staff assignments have loaded.
+-- This activates the vol2 shift-composition and resident-supervisor checks.
+UPDATE department_shift
+SET shift_status = 'VALID'
+WHERE shift_status = 'PROCESSING';
+
+LOAD DATA LOCAL INFILE 'data/generated/emergency_visit.csv'
+INTO TABLE emergency_visit
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@visit_id, @patient_amka, @triage_nurse_amka, @arrival_ts, @symptoms, @emergency_level, @service_start_ts, @disposition, @referred_department_id, @discharge_instructions, @status)
+SET
+    visit_id = @visit_id,
+    patient_amka = @patient_amka,
+    triage_nurse_amka = @triage_nurse_amka,
+    arrival_ts = @arrival_ts,
+    symptoms = @symptoms,
+    emergency_level = @emergency_level,
+    service_start_ts = NULLIF(@service_start_ts, ''),
+    disposition = @disposition,
+    referred_department_id = NULLIF(@referred_department_id, ''),
+    discharge_instructions = NULLIF(@discharge_instructions, ''),
+    status = NULLIF(@status, '');
+
+LOAD DATA LOCAL INFILE 'data/generated/hospitalization.csv'
+INTO TABLE hospitalization
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@hosp_id, @patient_amka, @department_id, @bed_id, @ken_code, @admission_ts, @discharge_ts, @admission_icd10_code, @discharge_icd10_code, @total_cost)
+SET
+    hosp_id = @hosp_id,
+    patient_amka = @patient_amka,
+    department_id = @department_id,
+    bed_id = @bed_id,
+    ken_code = @ken_code,
+    admission_ts = @admission_ts,
+    discharge_ts = NULLIF(@discharge_ts, ''),
+    admission_icd10_code = @admission_icd10_code,
+    discharge_icd10_code = NULLIF(@discharge_icd10_code, ''),
+    total_cost = @total_cost;
+
+LOAD DATA LOCAL INFILE 'data/generated/hospitalization_doctor.csv'
+INTO TABLE hospitalization_doctor
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(hosp_id, doctor_amka);
+
+LOAD DATA LOCAL INFILE 'data/generated/lab_test.csv'
+INTO TABLE lab_test
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@test_id, @hosp_id, @test_code, @ordered_by_doctor_amka, @test_datetime, @result_text)
+SET
+    test_id = @test_id,
+    hosp_id = @hosp_id,
+    test_code = @test_code,
+    ordered_by_doctor_amka = @ordered_by_doctor_amka,
+    test_datetime = @test_datetime,
+    result_text = NULLIF(@result_text, '');
+
+LOAD DATA LOCAL INFILE 'data/generated/procedure_event.csv'
+INTO TABLE procedure_event
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(procedure_event_id, hosp_id, procedure_code, place_id, chief_surgeon_amka, start_ts, end_ts, actual_duration_min);
+
+LOAD DATA LOCAL INFILE 'data/generated/procedure_participant.csv'
+INTO TABLE procedure_participant
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(procedure_event_id, personnel_amka);
+
+LOAD DATA LOCAL INFILE 'data/generated/patient_allergy.csv'
+INTO TABLE patient_allergy
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(patient_amka, substance_id);
+
+LOAD DATA LOCAL INFILE 'data/generated/prescription.csv'
+INTO TABLE prescription
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@prescription_id, @hosp_id, @patient_amka, @doctor_amka, @drug_id, @dosage, @frequency, @start_datetime, @end_datetime)
+SET
+    prescription_id = @prescription_id,
+    hosp_id = @hosp_id,
+    patient_amka = @patient_amka,
+    doctor_amka = @doctor_amka,
+    drug_id = @drug_id,
+    dosage = @dosage,
+    frequency = @frequency,
+    start_datetime = @start_datetime,
+    end_datetime = NULLIF(@end_datetime, '');
+
+LOAD DATA LOCAL INFILE 'data/generated/hospitalization_evaluation.csv'
+INTO TABLE hospitalization_evaluation
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@hosp_id, @evaluation_date, @medical_care_score, @nursing_care_score, @cleanliness_score, @food_score, @overall_experience_score, @comments)
+SET
+    hosp_id = @hosp_id,
+    evaluation_date = @evaluation_date,
+    medical_care_score = @medical_care_score,
+    nursing_care_score = @nursing_care_score,
+    cleanliness_score = @cleanliness_score,
+    food_score = @food_score,
+    overall_experience_score = @overall_experience_score,
+    comments = NULLIF(@comments, '');
+
+LOAD DATA LOCAL INFILE 'data/generated/image_asset.csv'
+INTO TABLE image_asset
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(image_id, image_url, alt_text);
+
+LOAD DATA LOCAL INFILE 'data/generated/entity_image.csv'
+INTO TABLE entity_image
+CHARACTER SET utf8mb4
+FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES
+(@entity_name, @entity_pk, @image_id, @entity_description)
+SET
+    entity_name = @entity_name,
+    entity_pk = @entity_pk,
+    image_id = @image_id,
+    entity_description = NULLIF(@entity_description, '');
+
+-- === validation.sql ===
+USE yg_eupolis_hospital;
+
+-- Use a fixed dataset date so validation is reproducible on every laptop.
+-- The generated bed statuses are synchronized to this same timestamp.
+SET @validation_as_of_ts = '2026-05-12 12:00:00';
+
+-- Row counts for a quick load check.
+SELECT 'department' AS table_name, COUNT(*) AS rows_count FROM department
+UNION ALL SELECT 'personnel', COUNT(*) FROM personnel
+UNION ALL SELECT 'doctor', COUNT(*) FROM doctor
+UNION ALL SELECT 'nurse', COUNT(*) FROM nurse
+UNION ALL SELECT 'administrative_staff', COUNT(*) FROM administrative_staff
+UNION ALL SELECT 'patient', COUNT(*) FROM patient
+UNION ALL SELECT 'bed', COUNT(*) FROM bed
+UNION ALL SELECT 'department_shift', COUNT(*) FROM department_shift
+UNION ALL SELECT 'shift_assignment', COUNT(*) FROM shift_assignment
+UNION ALL SELECT 'emergency_visit', COUNT(*) FROM emergency_visit
+UNION ALL SELECT 'hospitalization', COUNT(*) FROM hospitalization
+UNION ALL SELECT 'hospitalization_doctor', COUNT(*) FROM hospitalization_doctor
+UNION ALL SELECT 'lab_test', COUNT(*) FROM lab_test
+UNION ALL SELECT 'procedure_catalog', COUNT(*) FROM procedure_catalog
+UNION ALL SELECT 'procedure_event', COUNT(*) FROM procedure_event
+UNION ALL SELECT 'procedure_participant', COUNT(*) FROM procedure_participant
+UNION ALL SELECT 'prescription', COUNT(*) FROM prescription
+UNION ALL SELECT 'hospitalization_evaluation', COUNT(*) FROM hospitalization_evaluation;
+
+-- The following checks should return zero rows.
+
+-- Hospitalizations should have at least one assigned doctor.
+SELECT h.hosp_id
+FROM hospitalization h
+LEFT JOIN hospitalization_doctor hd ON hd.hosp_id = h.hosp_id
+WHERE hd.hosp_id IS NULL;
+
+-- Hospitalizations should not assign a bed from another department.
+SELECT h.hosp_id, h.department_id AS hospitalization_department_id, b.department_id AS bed_department_id
+FROM hospitalization h
+JOIN bed b ON b.bed_id = h.bed_id
+WHERE h.department_id <> b.department_id;
+
+-- Beds should not be double-booked by overlapping hospitalizations.
+SELECT a.hosp_id AS hospitalization_a,
+       b.hosp_id AS hospitalization_b,
+       a.bed_id
+FROM hospitalization a
+JOIN hospitalization b
+  ON a.bed_id = b.bed_id
+ AND a.hosp_id < b.hosp_id
+ AND a.admission_ts < COALESCE(b.discharge_ts, '9999-12-31 23:59:59')
+ AND COALESCE(a.discharge_ts, '9999-12-31 23:59:59') > b.admission_ts;
+
+-- Patients should not have overlapping hospitalizations.
+SELECT a.hosp_id AS hospitalization_a,
+       b.hosp_id AS hospitalization_b,
+       a.patient_amka
+FROM hospitalization a
+JOIN hospitalization b
+  ON a.patient_amka = b.patient_amka
+ AND a.hosp_id < b.hosp_id
+ AND a.admission_ts < COALESCE(b.discharge_ts, '9999-12-31 23:59:59')
+ AND COALESCE(a.discharge_ts, '9999-12-31 23:59:59') > b.admission_ts;
+
+-- Occupied beds should have a current hospitalization, and current hospitalizations should use occupied beds.
+SELECT b.bed_id, b.department_id, b.bed_status
+FROM bed b
+LEFT JOIN hospitalization h
+  ON h.bed_id = b.bed_id
+ AND h.admission_ts <= @validation_as_of_ts
+ AND (h.discharge_ts IS NULL OR h.discharge_ts > @validation_as_of_ts)
+WHERE b.bed_status = 'OCCUPIED'
+  AND h.hosp_id IS NULL;
+
+SELECT h.hosp_id, h.bed_id, b.bed_status
+FROM hospitalization h
+JOIN bed b ON b.bed_id = h.bed_id
+WHERE h.admission_ts <= @validation_as_of_ts
+  AND (h.discharge_ts IS NULL OR h.discharge_ts > @validation_as_of_ts)
+  AND b.bed_status <> 'OCCUPIED';
+
+-- Prescriptions should not conflict with patient allergies.
+SELECT p.prescription_id, p.patient_amka, p.drug_id, pa.substance_id
+FROM prescription p
+JOIN drug_active_substance das ON das.drug_id = p.drug_id
+JOIN patient_allergy pa
+  ON pa.patient_amka = p.patient_amka
+ AND pa.substance_id = das.substance_id;
+
+-- Prescriptions should stay within their hospitalization period.
+SELECT p.prescription_id, p.hosp_id, p.start_datetime, p.end_datetime, h.admission_ts, h.discharge_ts
+FROM prescription p
+JOIN hospitalization h
+  ON h.hosp_id = p.hosp_id
+ AND h.patient_amka = p.patient_amka
+WHERE p.start_datetime < h.admission_ts
+   OR (h.discharge_ts IS NOT NULL AND p.start_datetime > h.discharge_ts)
+   OR (p.end_datetime IS NOT NULL AND p.end_datetime < h.admission_ts)
+   OR (p.end_datetime IS NOT NULL AND h.discharge_ts IS NOT NULL AND p.end_datetime > h.discharge_ts);
+
+-- Procedure rooms should not have overlapping events.
+SELECT a.procedure_event_id AS event_a,
+       b.procedure_event_id AS event_b,
+       a.place_id
+FROM procedure_event a
+JOIN procedure_event b
+  ON a.place_id = b.place_id
+ AND a.procedure_event_id < b.procedure_event_id
+ AND a.start_ts < b.end_ts
+ AND a.end_ts > b.start_ts;
+
+-- Procedure events should stay inside their hospitalization period.
+SELECT pe.procedure_event_id, pe.hosp_id, pe.start_ts, pe.end_ts, h.admission_ts, h.discharge_ts
+FROM procedure_event pe
+JOIN hospitalization h ON h.hosp_id = pe.hosp_id
+WHERE pe.start_ts < h.admission_ts
+   OR (h.discharge_ts IS NOT NULL AND pe.end_ts > h.discharge_ts);
+
+-- Procedure catalog rows should include valid category and place data.
+SELECT procedure_code, procedure_category, required_place_type
+FROM procedure_catalog
+WHERE procedure_category NOT IN ('SURGICAL', 'DIAGNOSTIC', 'THERAPEUTIC')
+   OR required_place_type NOT IN ('OPERATING_ROOM', 'PROCEDURE_ROOM');
+
+-- Department shifts should meet the required staffing coverage.
+SELECT ds.shift_id,
+       ds.department_id,
+       ds.shift_date,
+       ds.shift_type,
+       SUM(p.personnel_type = 'DOCTOR') AS doctor_count,
+       SUM(p.personnel_type = 'NURSE') AS nurse_count,
+       SUM(p.personnel_type = 'ADMIN') AS admin_count
+FROM department_shift ds
+LEFT JOIN shift_assignment sa ON sa.shift_id = ds.shift_id
+LEFT JOIN personnel p ON p.amka = sa.personnel_amka
+GROUP BY ds.shift_id, ds.department_id, ds.shift_date, ds.shift_type
+HAVING doctor_count < 3
+    OR nurse_count < 6
+    OR admin_count < 2;
+
+-- Emergency service timestamps should be chronological.
+SELECT visit_id
+FROM emergency_visit
+WHERE service_start_ts IS NOT NULL
+  AND service_start_ts < arrival_ts;
+
+-- Emergency disposition/referral consistency.
+SELECT visit_id, disposition, referred_department_id
+FROM emergency_visit
+WHERE (disposition = 'HOSPITALIZED' AND referred_department_id IS NULL)
+   OR (disposition = 'DISCHARGED' AND referred_department_id IS NOT NULL);

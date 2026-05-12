@@ -25,7 +25,6 @@ DROP TABLE IF EXISTS emergency_visit;
 DROP TABLE IF EXISTS shift_assignment;
 DROP TABLE IF EXISTS department_shift;
 DROP TABLE IF EXISTS operating_place;
-DROP TABLE IF EXISTS icd10_ken_map;
 DROP TABLE IF EXISTS ken;
 DROP TABLE IF EXISTS icd10_diagnosis;
 DROP TABLE IF EXISTS emergency_contact;
@@ -136,18 +135,15 @@ CREATE TABLE doctor_department (
 CREATE TABLE bed (
     bed_id                   INT AUTO_INCREMENT PRIMARY KEY,
     department_id            INT NOT NULL,
-    bed_number               INT NOT NULL,
     bed_type                 VARCHAR(20) NOT NULL,
     bed_status               VARCHAR(20) NOT NULL,
     CONSTRAINT fk_bed_department
         FOREIGN KEY (department_id) REFERENCES department(department_id)
         ON DELETE CASCADE
         ON UPDATE CASCADE,
-    CONSTRAINT uq_bed_department_number UNIQUE (department_id, bed_number),
-    CONSTRAINT ck_bed_number CHECK (bed_number > 0),
     CONSTRAINT ck_bed_type CHECK (bed_type IN ('ICU', 'SINGLE', 'MULTI_BED')),
     CONSTRAINT ck_bed_status CHECK (bed_status IN ('AVAILABLE', 'OCCUPIED', 'MAINTENANCE'))
-) ENGINE=InnoDB;
+);
 
 CREATE TABLE patient (
     patient_amka            CHAR(11) PRIMARY KEY,
@@ -198,17 +194,6 @@ CREATE TABLE ken (
     CONSTRAINT ck_ken_duration CHECK (mean_duration_days >= 0)
 );
 
-CREATE TABLE icd10_ken_map (
-    mdc_code                VARCHAR(20) NOT NULL,
-    ken_code                VARCHAR(20) NOT NULL,
-    icd10_code_prefix       VARCHAR(20) NOT NULL,
-    PRIMARY KEY (ken_code, icd10_code_prefix),
-    CONSTRAINT fk_icd10_ken_map_ken
-        FOREIGN KEY (ken_code) REFERENCES ken(ken_code)
-        ON DELETE CASCADE
-        ON UPDATE CASCADE
-);
-
 CREATE TABLE operating_place (
     place_id                INT AUTO_INCREMENT PRIMARY KEY,
     place_name              VARCHAR(120) NOT NULL,
@@ -226,12 +211,14 @@ CREATE TABLE department_shift (
     shift_type              VARCHAR(20) NOT NULL,
     start_time              TIME NOT NULL,
     end_time                TIME NOT NULL,
+    shift_status            VARCHAR(20) NOT NULL,
     CONSTRAINT fk_department_shift_department
         FOREIGN KEY (department_id) REFERENCES department(department_id)
         ON DELETE CASCADE
         ON UPDATE CASCADE,
     CONSTRAINT uq_department_shift UNIQUE (department_id, shift_date, shift_type),
     CONSTRAINT ck_shift_type CHECK (shift_type IN ('MORNING', 'AFTERNOON', 'NIGHT')),
+    CONSTRAINT ck_shift_status CHECK (shift_status IN ('PROCESSING', 'VALID')),
     CONSTRAINT ck_shift_time CHECK (
         (shift_type = 'MORNING'   AND start_time = '07:00:00' AND end_time = '15:00:00') OR
         (shift_type = 'AFTERNOON' AND start_time = '15:00:00' AND end_time = '23:00:00') OR
@@ -263,9 +250,9 @@ CREATE TABLE emergency_visit (
     emergency_level         INT NOT NULL,
     referred_department_id  INT NULL,
     service_start_ts        DATETIME NULL,
-    service_end_ts          DATETIME NULL,
     disposition             VARCHAR(20) NOT NULL,
     discharge_instructions  TEXT NULL,
+    status                  VARCHAR(20),
     CONSTRAINT fk_emergency_visit_patient
         FOREIGN KEY (patient_amka) REFERENCES patient(patient_amka)
         ON DELETE RESTRICT
@@ -274,15 +261,11 @@ CREATE TABLE emergency_visit (
         FOREIGN KEY (triage_nurse_amka) REFERENCES nurse(amka)
         ON DELETE RESTRICT
         ON UPDATE CASCADE,
-    CONSTRAINT fk_emergency_visit_referred_department
-        FOREIGN KEY (referred_department_id) REFERENCES department(department_id)
-        ON DELETE SET NULL
-        ON UPDATE CASCADE,
     CONSTRAINT ck_emergency_level CHECK (emergency_level BETWEEN 1 AND 5),
     CONSTRAINT ck_emergency_disposition CHECK (disposition IN ('DISCHARGED', 'HOSPITALIZED')),
+    CONSTRAINT ck_emergency_status CHECK (status IN ('WAITING', 'CALLED')),
     CONSTRAINT ck_emergency_times CHECK (
-        (service_start_ts IS NULL OR service_start_ts >= arrival_ts)
-        AND (service_end_ts IS NULL OR service_start_ts IS NULL OR service_end_ts >= service_start_ts)
+        service_start_ts IS NULL OR service_start_ts >= arrival_ts
     )
 );
 
@@ -291,7 +274,6 @@ CREATE TABLE hospitalization (
     patient_amka             CHAR(11) NOT NULL,
     department_id            INT NOT NULL,
     bed_id                   INT NOT NULL,
-    emergency_visit_id       BIGINT NULL,
     ken_code                 VARCHAR(20) NOT NULL,
     admission_ts             DATETIME NOT NULL,
     discharge_ts             DATETIME NULL,
@@ -309,10 +291,6 @@ CREATE TABLE hospitalization (
     CONSTRAINT fk_hosp_bed
         FOREIGN KEY (bed_id) REFERENCES bed(bed_id)
         ON DELETE RESTRICT
-        ON UPDATE CASCADE,
-    CONSTRAINT fk_hosp_emergency_visit
-        FOREIGN KEY (emergency_visit_id) REFERENCES emergency_visit(visit_id)
-        ON DELETE SET NULL
         ON UPDATE CASCADE,
     CONSTRAINT fk_hosp_ken
         FOREIGN KEY (ken_code) REFERENCES ken(ken_code)
@@ -334,8 +312,6 @@ CREATE TABLE hospitalization (
 CREATE TABLE hospitalization_doctor (
     hosp_id                  BIGINT NOT NULL,
     doctor_amka              CHAR(11) NOT NULL,
-    doctor_role              VARCHAR(40) NOT NULL,
-    is_primary               BOOLEAN NOT NULL DEFAULT FALSE,
     PRIMARY KEY (hosp_id, doctor_amka),
     CONSTRAINT fk_hosp_doctor_hosp
         FOREIGN KEY (hosp_id) REFERENCES hospitalization(hosp_id)
@@ -344,8 +320,7 @@ CREATE TABLE hospitalization_doctor (
     CONSTRAINT fk_hosp_doctor_doctor
         FOREIGN KEY (doctor_amka) REFERENCES doctor(amka)
         ON DELETE RESTRICT
-        ON UPDATE CASCADE,
-    CONSTRAINT ck_hosp_doctor_role CHECK (doctor_role IN ('PRIMARY', 'CONSULTING'))
+        ON UPDATE CASCADE
 );
 
 CREATE TABLE lab_test_catalog (
@@ -361,9 +336,6 @@ CREATE TABLE lab_test (
     ordered_by_doctor_amka  CHAR(11) NOT NULL,
     test_datetime           DATETIME NOT NULL,
     result_text             TEXT NULL,
-    result_numeric          DECIMAL(12,2) NULL,
-    result_unit             VARCHAR(40) NULL,
-    cost                    DECIMAL(12,2) NOT NULL DEFAULT 0,
     CONSTRAINT fk_lab_test_hosp
         FOREIGN KEY (hosp_id) REFERENCES hospitalization(hosp_id)
         ON DELETE CASCADE
@@ -375,8 +347,7 @@ CREATE TABLE lab_test (
     CONSTRAINT fk_lab_test_doctor
         FOREIGN KEY (ordered_by_doctor_amka) REFERENCES doctor(amka)
         ON DELETE RESTRICT
-        ON UPDATE CASCADE,
-    CONSTRAINT ck_lab_test_cost CHECK (cost >= 0)
+        ON UPDATE CASCADE
 );
 
 CREATE TABLE procedure_catalog (
@@ -420,7 +391,6 @@ CREATE TABLE procedure_event (
 CREATE TABLE procedure_participant (
     procedure_event_id      BIGINT NOT NULL,
     personnel_amka          CHAR(11) NOT NULL,
-    participant_role        VARCHAR(40) NOT NULL,
     PRIMARY KEY (procedure_event_id, personnel_amka),
     CONSTRAINT fk_proc_participant_event
         FOREIGN KEY (procedure_event_id) REFERENCES procedure_event(procedure_event_id)
@@ -429,8 +399,7 @@ CREATE TABLE procedure_participant (
     CONSTRAINT fk_proc_participant_personnel
         FOREIGN KEY (personnel_amka) REFERENCES personnel(amka)
         ON DELETE RESTRICT
-        ON UPDATE CASCADE,
-    CONSTRAINT ck_proc_participant_role CHECK (participant_role IN ('ASSISTANT_DOCTOR', 'SCRUB_NURSE'))
+        ON UPDATE CASCADE
 );
 
 CREATE TABLE drug (
@@ -575,13 +544,7 @@ CREATE INDEX idx_hosp_ken /*Q1 για να βρούμε τις νοσηλείε�
     ON hospitalization (ken_code);
 
 CREATE INDEX idx_hosp_admission_icd10 /*Q14 για να βρούμε τις νοσηλείες με συγκεκριμένο κωδικό διάγνωσης εισαγωγής πιο γρήγορα*/
-    ON hospitalization (admission_icd10_code);
-
-CREATE INDEX idx_icd10_ken_map_prefix
-    ON icd10_ken_map (icd10_code_prefix, ken_code);
-
-CREATE INDEX idx_bed_department_status
-    ON bed (department_id, bed_status, bed_type);
+    ON hospitalization (admission_icd10_code); /*Αν συμφωνειτε λεω να προσθεσουμε και το admission_ts*/
 
 CREATE INDEX idx_lab_test_hosp_code /* Μαλλον για σβησιμο */
     ON lab_test (hosp_id, test_code, test_datetime);
@@ -615,6 +578,76 @@ CREATE INDEX idx_patient_allergy_substance /*Q7 για να βρούμε του�
 
 CREATE INDEX idx_evaluation_date /*??*/
     ON hospitalization_evaluation (evaluation_date);
+
+CREATE INDEX idx_evaluation_evaluation /*Q4 Για να βρούμε τις αξιολογήσεις των ασθενών για συγκεκριμένο ιατρό μέσω της νοσηλείας*/
+    ON hospitalization_evaluation (hosp_id);
+
+/* Views*/
+CREATE VIEW patient_history AS
+SELECT 
+    p.patient_amka, p.first_name, p.last_name, p.insurance_provider,
+    h.hosp_id, h.department_id, h.admission_ts, h.discharge_ts, h.total_cost,
+    d.department_name, id.icd10_code, id.icd10_description,
+    k.ken_code, k.ken_description
+FROM patient p
+JOIN hospitalization h ON p.patient_amka = h.patient_amka
+JOIN department d ON h.department_id = d.department_id
+JOIN icd10_diagnosis id ON h.admission_icd10_code = id.icd10_code
+JOIN ken k ON h.ken_code = k.ken_code;
+
+
+CREATE VIEW prescription_substances AS
+SELECT
+    pr.prescription_id, pr.hosp_id, pr.patient_amka, pr.doctor_amka,
+    pr.drug_id, dr.drug_name, pr.start_datetime, pr.end_datetime,
+    a.substance_id, a.substance_name
+FROM prescription pr
+JOIN drug dr ON pr.drug_id = dr.drug_id
+JOIN drug_active_substance das ON dr.drug_id = das.drug_id
+JOIN active_substance a ON das.substance_id = a.substance_id;
+
+CREATE VIEW shift_staff AS
+SELECT
+    ds.shift_id,
+    ds.department_id,
+    d.department_name,
+    ds.shift_date,
+    ds.shift_type,
+    ds.start_time,
+    ds.end_time,
+    ds.shift_status,
+    sa.personnel_amka,
+    p.first_name,
+    p.last_name,
+    p.personnel_type,
+    sa.assigned_role
+FROM department_shift ds
+JOIN department d ON d.department_id = ds.department_id
+JOIN shift_assignment sa ON sa.shift_id = ds.shift_id
+JOIN personnel p ON p.amka = sa.personnel_amka;
+
+CREATE VIEW doctor_procedure AS
+SELECT
+    pe.procedure_event_id,
+    pe.hosp_id,
+    pe.procedure_code,
+    pc.procedure_name,
+    pc.procedure_category,
+    pe.chief_surgeon_amka AS doctor_amka,
+    p.first_name,
+    p.last_name,
+    d.specialization,
+    d.doctor_rank,
+    pe.place_id,
+    op.place_name,
+    pe.start_ts,
+    pe.end_ts,
+    pe.actual_duration_min
+FROM procedure_event pe
+JOIN procedure_catalog pc ON pc.procedure_code = pe.procedure_code
+JOIN doctor d ON d.amka = pe.chief_surgeon_amka
+JOIN personnel p ON p.amka = d.amka
+JOIN operating_place op ON op.place_id = pe.place_id;
 
 
 /* Triggers for key business rules */
@@ -810,6 +843,43 @@ BEGIN
     END IF;
 END$$
 
+CREATE TRIGGER trg_procedure_participant_overlap_bu /* Για να ελέγξουμε αν το προσωπικό που προσπαθούμε να προσθέσουμε ως συμμετέχοντα σε μια διαδικασία συμμετέχει ήδη σε άλλη διαδικασία που επικαλύπτεται χρονικά με την τρέχουσα ή είναι επικεφαλής χειρουργός σε άλλη διαδικασία που επικαλύπτεται χρονικά με την τρέχουσα */
+BEFORE UPDATE ON procedure_participant
+FOR EACH ROW
+BEGIN
+    DECLARE v_start DATETIME; /* Χρειαζόμαστε την ημερομηνία έναρξης */
+    DECLARE v_end DATETIME;   /* και λήξης της διαδικασίας για να ελέγξουμε τις επικαλύψεις */
+
+    SELECT start_ts, end_ts /* Επιλέγουμε την ημερομηνία έναρξης και λήξης της διαδικασίας στην οποία προσπαθούμε να προσθέσουμε συμμετέχοντα */
+      INTO v_start, v_end
+      FROM procedure_event
+     WHERE procedure_event_id = NEW.procedure_event_id;
+
+    IF EXISTS (  /* Ελέγχουμε αν το προσωπικό που προσπαθούμε να προσθέσουμε συμμετέχει ήδη σε άλλη διαδικασία που επικαλύπτεται χρονικά με την τρέχουσα */
+        SELECT 1 /* Δεν χρειάζεται να επιλέξουμε συγκεκριμένα πεδία, αρκεί να επιστρέψουμε κάτι για να ξέρουμε ότι υπάρχει αποτέλεσμα */
+        FROM procedure_participant pp
+        JOIN procedure_event pe
+          ON pe.procedure_event_id = pp.procedure_event_id
+        WHERE pp.personnel_amka = NEW.personnel_amka 
+          AND v_start < pe.end_ts
+          AND v_end > pe.start_ts
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'The same staff member cannot participate in overlapping procedures.';
+    END IF;
+
+    IF EXISTS ( /* Ελέγχουμε αν το προσωπικό που προσπαθούμε να προσθέσουμε είναι επικεφαλής χειρουργός σε άλλη διαδικασία που επικαλύπτεται χρονικά με την τρέχουσα */
+        SELECT 1
+        FROM procedure_event pe
+        WHERE pe.chief_surgeon_amka = NEW.personnel_amka
+          AND v_start < pe.end_ts
+          AND v_end > pe.start_ts
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'The same doctor cannot be chief surgeon in one procedure and participant in another at the same time.';
+    END IF;
+END$$
+
 CREATE TRIGGER trg_procedure_place_type_bi /* Για να ελέγξουμε αν ο τύπος του χώρου που προσπαθούμε να ορίσουμε για μια διαδικασία ταιριάζει με τον απαιτούμενο τύπο χώρου της διαδικασίας */
 BEFORE INSERT ON procedure_event
 FOR EACH ROW
@@ -895,81 +965,21 @@ BEGIN
     END IF;
 END$$
 
-CREATE TRIGGER trg_shift_resident_supervisor_bi
-BEFORE INSERT ON shift_assignment
-FOR EACH ROW
-BEGIN
-    DECLARE supervisor_cnt INT DEFAULT 0;
-    DECLARE doc_rank       VARCHAR(20);
-
-    SELECT (
-        SELECT d.doctor_rank
-        FROM doctor d
-        WHERE d.amka = NEW.personnel_amka
-        LIMIT 1
-    ) INTO doc_rank;
-
-    IF doc_rank = 'RESIDENT' THEN
-        SELECT COUNT(*) INTO supervisor_cnt
-        FROM shift_assignment sa
-        JOIN doctor d ON sa.personnel_amka = d.amka
-        WHERE sa.shift_id = NEW.shift_id
-            AND d.doctor_rank IN ('CONSULTANT_A', 'DIRECTOR'); 
-
-        IF supervisor_cnt = 0 THEN
-            SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Resident doctor must have a supervisor';
-        END IF;
-        
-    END IF;
-END$$
-
-
-CREATE TRIGGER trg_shift_resident_supervisor_bu
-BEFORE UPDATE ON shift_assignment
-FOR EACH ROW
-BEGIN
-    DECLARE supervisor_cnt INT DEFAULT 0;
-    DECLARE doc_rank       VARCHAR(20);
-
-    SELECT (
-        SELECT d.doctor_rank
-        FROM doctor d
-        WHERE d.amka = NEW.personnel_amka
-        LIMIT 1
-    ) INTO doc_rank;
-
-    IF doc_rank = 'RESIDENT' THEN
-        SELECT COUNT(*) INTO supervisor_cnt
-        FROM shift_assignment sa
-        JOIN doctor d ON sa.personnel_amka = d.amka
-        WHERE sa.shift_id = NEW.shift_id
-            AND d.doctor_rank IN ('CONSULTANT_A', 'DIRECTOR'); 
-
-        IF supervisor_cnt = 0 THEN
-            SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Resident doctor must have a supervisor';
-        END IF;
-        
-    END IF;
-END$$
-
-
 
 CREATE TRIGGER trg_shift_monthly_limits_bi
 BEFORE INSERT ON shift_assignment
 FOR EACH ROW
 BEGIN
-    DECLARE shift_cnt      INT DEFAULT 0;
-    DECLARE per_type       VARCHAR(20);
-    DECLARE max_limit      INT;
-    DECLARE v_shift_date   DATE;
+    DECLARE shift_cnt       INT DEFAULT 0;
+    DECLARE per_type        VARCHAR(20);
+    DECLARE max_limit       INT;
+    DECLARE new_shift_date  DATE;
 
     SELECT personnel_type INTO per_type
     FROM personnel
     WHERE amka = NEW.personnel_amka;
 
-    SELECT shift_date INTO v_shift_date
+    SELECT shift_date INTO new_shift_date
     FROM department_shift
     WHERE shift_id = NEW.shift_id;
 
@@ -977,8 +987,8 @@ BEGIN
     FROM shift_assignment sa
     JOIN department_shift ds ON sa.shift_id = ds.shift_id
     WHERE sa.personnel_amka = NEW.personnel_amka
-        AND MONTH(ds.shift_date) = MONTH(v_shift_date)
-        AND YEAR(ds.shift_date) = YEAR(v_shift_date);
+        AND MONTH(new_shift_date) = MONTH(ds.shift_date)
+        AND YEAR(new_shift_date) = YEAR(ds.shift_date);
 
     IF per_type = 'DOCTOR' THEN 
         SET max_limit = 15;
@@ -1004,16 +1014,16 @@ CREATE TRIGGER trg_shift_monthly_limits_bu
 BEFORE UPDATE ON shift_assignment
 FOR EACH ROW
 BEGIN
-    DECLARE shift_cnt      INT DEFAULT 0;
-    DECLARE per_type       VARCHAR(20);
-    DECLARE max_limit      INT;
-    DECLARE v_shift_date   DATE;
+    DECLARE shift_cnt       INT DEFAULT 0;
+    DECLARE per_type        VARCHAR(20);
+    DECLARE max_limit       INT;
+    DECLARE new_shift_date  DATE;
 
     SELECT personnel_type INTO per_type
     FROM personnel
     WHERE amka = NEW.personnel_amka;
 
-    SELECT shift_date INTO v_shift_date
+    SELECT shift_date INTO new_shift_date
     FROM department_shift
     WHERE shift_id = NEW.shift_id;
 
@@ -1021,9 +1031,8 @@ BEGIN
     FROM shift_assignment sa
     JOIN department_shift ds ON sa.shift_id = ds.shift_id
     WHERE sa.personnel_amka = NEW.personnel_amka
-        AND MONTH(ds.shift_date) = MONTH(v_shift_date)
-        AND YEAR(ds.shift_date) = YEAR(v_shift_date)
-        AND NOT (sa.shift_id = OLD.shift_id AND sa.personnel_amka = OLD.personnel_amka);
+        AND MONTH(new_shift_date) = MONTH(ds.shift_date)
+        AND YEAR(new_shift_date) = YEAR(ds.shift_date);
 
     IF per_type = 'DOCTOR' THEN 
         SET max_limit = 15;
@@ -1045,7 +1054,6 @@ BEGIN
 END$$  
 
 
-
 CREATE TRIGGER trg_shift_rest_bi
 BEFORE INSERT ON shift_assignment
 FOR EACH ROW
@@ -1058,7 +1066,6 @@ BEGIN
     DECLARE old_end         TIME;
     DECLARE old_type        VARCHAR(20);
     DECLARE prev_end_dt     DATETIME;
-    DECLARE CONTINUE HANDLER FOR NOT FOUND SET old_date = NULL;
 
     /*Στοιχεία νέας βάρδιας που πάει να εισαχθεί*/
     SELECT shift_date, start_time INTO new_date, new_start
@@ -1074,7 +1081,7 @@ BEGIN
     FROM shift_assignment sa
     JOIN department_shift ds ON sa.shift_id = ds.shift_id
     WHERE sa.personnel_amka = NEW.personnel_amka
-      AND TIMESTAMP(ds.shift_date, ds.end_time) <= new_start_dt
+        AND TIMESTAMP(ds.shift_date, ds.end_time) <= new_start_dt
     ORDER BY ds.shift_date DESC, ds.start_time DESC
     LIMIT 1;
 
@@ -1111,7 +1118,6 @@ BEGIN
     DECLARE old_end         TIME;
     DECLARE old_type        VARCHAR(20);
     DECLARE prev_end_dt     DATETIME;
-    DECLARE CONTINUE HANDLER FOR NOT FOUND SET old_date = NULL;
 
     /*Στοιχεία νέας βάρδιας που πάνε να εισαχθούν*/
     SELECT shift_date, start_time INTO new_date, new_start
@@ -1127,8 +1133,8 @@ BEGIN
     FROM shift_assignment sa
     JOIN department_shift ds ON sa.shift_id = ds.shift_id
     WHERE sa.personnel_amka = NEW.personnel_amka
-      AND NOT (sa.shift_id = OLD.shift_id AND sa.personnel_amka = OLD.personnel_amka)
-      AND TIMESTAMP(ds.shift_date, ds.end_time) <= new_start_dt
+        AND sa.shift_id != OLD.shift_id
+        AND TIMESTAMP(ds.shift_date, ds.end_time) <= new_start_dt
     ORDER BY ds.shift_date DESC, ds.start_time DESC
     LIMIT 1;
 
@@ -1202,7 +1208,7 @@ BEGIN
             FROM shift_assignment sa
             JOIN department_shift ds ON ds.shift_id = sa.shift_id
             WHERE sa.personnel_amka = NEW.personnel_amka
-                AND NOT (sa.shift_id = OLD.shift_id AND sa.personnel_amka = OLD.personnel_amka)
+                AND sa.shift_id != NEW.shift_id
             ORDER BY ds.shift_date DESC, ds.start_time DESC
             LIMIT 3)
         AS last_3_shifts
@@ -1213,36 +1219,6 @@ BEGIN
             SET MESSAGE_TEXT = 'There must not be more than 3 night shifts in a row.';
         END IF;
     END IF;
-END$$
-
-CREATE TRIGGER trg_extra_hospitalization_cost_bi
-BEFORE INSERT ON hospitalization
-FOR EACH ROW
-BEGIN
-    DECLARE v_basic_cost            NUMERIC(12,2);
-    DECLARE v_mean_duration_days    INT;
-    DECLARE total_days              INT;
-    DECLARE v_extra_daily_cost      NUMERIC(12,2);
-
-
-    SELECT basic_cost, mean_duration_days, extra_daily_cost INTO v_basic_cost, v_mean_duration_days, v_extra_daily_cost
-    FROM ken
-    WHERE ken_code = NEW.ken_code;
-
-    IF NEW.discharge_ts IS NULL THEN
-        SET NEW.total_cost = v_basic_cost;
-    ELSE
-        SET total_days = GREATEST(1, CEIL(TIMESTAMPDIFF(HOUR, NEW.admission_ts, NEW.discharge_ts) / 24));
-
-        IF total_days <= v_mean_duration_days THEN
-            SET NEW.total_cost = v_basic_cost;
-        END IF;
-
-        IF total_days > v_mean_duration_days THEN
-            SET NEW.total_cost = v_basic_cost + (total_days - v_mean_duration_days) * v_extra_daily_cost;
-        END IF;
-    END IF;
-
 END$$
 
 CREATE TRIGGER trg_extra_hospitalization_cost_bu
@@ -1259,20 +1235,104 @@ BEGIN
     FROM ken
     WHERE ken_code = NEW.ken_code;
 
-    IF NEW.discharge_ts IS NULL THEN
+    SET total_days = DATEDIFF(NEW.discharge_ts, NEW.admission_ts);
+
+    IF total_days <= v_mean_duration_days THEN
         SET NEW.total_cost = v_basic_cost;
-    ELSE
-        SET total_days = GREATEST(1, CEIL(TIMESTAMPDIFF(HOUR, NEW.admission_ts, NEW.discharge_ts) / 24));
+    END IF;
 
-        IF total_days <= v_mean_duration_days THEN
-            SET NEW.total_cost = v_basic_cost;
-        END IF;
-
-        IF total_days > v_mean_duration_days THEN
-            SET NEW.total_cost = v_basic_cost + (total_days - v_mean_duration_days) * v_extra_daily_cost;
-        END IF;
+    IF total_days > v_mean_duration_days THEN
+        SET NEW.total_cost = v_basic_cost + (total_days - v_mean_duration_days) * v_extra_daily_cost;
     END IF;
 
 END$$
 
+CREATE PROCEDURE shift_composition(IN shiftID BIGINT)
+BEGIN
+    DECLARE doc_cnt        INT;
+    DECLARE nurse_cnt      INT;
+    DECLARE admin_cnt      INT;
+
+    SELECT COUNT(*) INTO doc_cnt
+    FROM shift_assignment sa
+    JOIN personnel p ON p.amka = sa.personnel_amka
+    WHERE sa.shift_id = shiftID
+        AND p.personnel_type = 'DOCTOR';
+
+    SELECT COUNT(*) INTO nurse_cnt
+    FROM shift_assignment sa
+    JOIN personnel p ON p.amka = sa.personnel_amka
+    WHERE sa.shift_id = shiftID
+        AND p.personnel_type = 'NURSE';
+
+    SELECT COUNT(*) INTO admin_cnt
+    FROM shift_assignment sa
+    JOIN personnel p ON p.amka = sa.personnel_amka
+    WHERE sa.shift_id = shiftID
+        AND p.personnel_type = 'ADMIN';
+
+    IF (doc_cnt < 3 OR nurse_cnt < 6 OR admin_cnt < 2) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Not enough personnel';
+    END IF;
+END$$  
+
+CREATE PROCEDURE FIFO(OUT patientAMKA CHAR(11))
+BEGIN
+    DECLARE v_visit_id  BIGINT;
+
+    SELECT patient_amka, visit_id INTO patientAMKA, v_visit_id
+    FROM emergency_visit em
+    WHERE em.status = 'WAITING'
+    ORDER BY em.emergency_level ASC, em.arrival_ts ASC
+    LIMIT 1;
+
+    IF patientAMKA IS NOT NULL THEN
+        UPDATE emergency_visit 
+        SET status = 'CALLED' 
+        WHERE visit_id = v_visit_id;
+    END IF;
+END$$
+
+CREATE PROCEDURE shift_resident_supervisor(IN shiftID BIGINT)
+BEGIN
+    DECLARE has_resident INT DEFAULT 0;
+    DECLARE has_supervisor INT DEFAULT 0;
+
+    /*Πόσοι ειδικευόμενοι υπάρχουν στη βάρδια*/
+    SELECT COUNT(*) INTO has_resident
+    FROM shift_assignment sa
+    JOIN doctor d ON d.amka = sa.personnel_amka
+    WHERE sa.shift_id = shiftID
+      AND d.doctor_rank = 'RESIDENT';
+
+    /* Πόσοι επιβλέποντες υπάρχουν στη βάρδια */
+    SELECT COUNT(*) INTO has_supervisor
+    FROM shift_assignment sa
+    JOIN doctor d ON d.amka = sa.personnel_amka
+    WHERE sa.shift_id = shiftID
+      AND d.doctor_rank IN ('CONSULTANT_A', 'DIRECTOR');
+
+    /*Αν υπάρχει ειδικευόμενος πρέπει να υπάρχει τουλάχιστον 1 επιβλέπων */
+    IF has_resident > 0 AND has_supervisor = 0 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Resident doctors require at least one Consultant A or Director in the shift.';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_shift_validation_bu
+BEFORE UPDATE ON department_shift
+FOR EACH ROW
+BEGIN
+    IF NEW.shift_status = 'VALID' AND OLD.shift_status != 'VALID' THEN
+        CALL shift_composition(NEW.shift_id);
+        CALL shift_resident_supervisor(NEW.shift_id);
+    END IF;
+END$$
+
 DELIMITER ;
+
+
+
+
+

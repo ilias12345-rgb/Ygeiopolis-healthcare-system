@@ -1,3 +1,9 @@
+"""Generate deterministic CSV data for the Ygeiopolis hospital schema.
+
+The generator combines cleaned official reference files, when available, with
+synthetic transactional data designed to exercise the schema constraints,
+triggers, views, and final reporting queries.
+"""
 
 from __future__ import annotations
 import argparse
@@ -23,6 +29,7 @@ except Exception:
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
+DATASET_AS_OF_TS = datetime(2026, 5, 12, 12, 0, 0)
 
 DEPARTMENT_SPECS = [
     ("Cardiology", "CARDIOLOGY"),
@@ -80,6 +87,29 @@ DEMO_DRUGS = [
     ("DEMO0020", "Ondansetron 8mg tablet", ["ONDANSETRON"]),
 ]
 
+DEMO_KEN_ROWS = [
+    ("DKEN001", "Demo cardiology short stay", 1200.00, 3),
+    ("DKEN002", "Demo cardiology complex stay", 4200.00, 8),
+    ("DKEN003", "Demo general surgery simple procedure", 1800.00, 4),
+    ("DKEN004", "Demo general surgery complex procedure", 6200.00, 10),
+    ("DKEN005", "Demo ICU respiratory support", 8500.00, 12),
+    ("DKEN006", "Demo neurology admission", 2300.00, 6),
+    ("DKEN007", "Demo orthopedic admission", 3100.00, 7),
+    ("DKEN008", "Demo pulmonary infection", 1600.00, 5),
+    ("DKEN009", "Demo gastroenterology admission", 1400.00, 4),
+    ("DKEN010", "Demo oncology admission", 3600.00, 9),
+    ("DKEN011", "Demo pediatrics admission", 900.00, 3),
+    ("DKEN012", "Demo ophthalmology procedure", 1000.00, 2),
+    ("DKEN013", "Demo ENT admission", 950.00, 3),
+    ("DKEN014", "Demo nephrology admission", 2800.00, 7),
+    ("DKEN015", "Demo psychiatry admission", 1700.00, 8),
+    ("DKEN016", "Demo internal medicine admission", 1500.00, 5),
+    ("DKEN017", "Demo emergency observation", 600.00, 1),
+    ("DKEN018", "Demo high cost transplant-like case", 18000.00, 20),
+    ("DKEN019", "Demo diagnostic same-day case", 450.00, 1),
+    ("DKEN020", "Demo therapeutic intervention", 2500.00, 6),
+]
+
 COMMON_SUBSTANCE_PAIRS = [
     ("PARACETAMOL", "ONDANSETRON"),
     ("AMOXICILLIN", "OMEPRAZOLE"),
@@ -113,6 +143,8 @@ def normalize_space(s):
 
 
 def parse_money_eur(s):
+    if isinstance(s, (int, float, np.integer, np.floating)) and not pd.isna(s):
+        return float(s)
     s = normalize_space(s)
     if not s:
         return None
@@ -142,6 +174,24 @@ def derive_place_type(name: str, category: str) -> str:
     if any(k in n for k in ["ΤΟΜΟΓ","ΜΑΓΝΗΤ","ΑΚΤΙΝ","ΥΠΕΡΗΧ","ΕΝΔΟΣΚΟΠ","ΑΓΓΕΙΟΓΡΑΦ"]):
         return "PROCEDURE_ROOM"
     return "PROCEDURE_ROOM"
+
+
+def derive_standard_duration_min(name: str, category: str) -> int:
+    seed = sum(ord(ch) for ch in name)
+    if category == "SURGICAL":
+        return 60 + (seed % 7) * 15
+    if category == "THERAPEUTIC":
+        return 30 + (seed % 5) * 15
+    return 15 + (seed % 4) * 15
+
+
+def derive_standard_cost(name: str, category: str) -> float:
+    seed = sum(ord(ch) for ch in name)
+    if category == "SURGICAL":
+        return round(650.0 + (seed % 12) * 125.0, 2)
+    if category == "THERAPEUTIC":
+        return round(250.0 + (seed % 8) * 75.0, 2)
+    return round(45.0 + (seed % 6) * 35.0, 2)
 
 
 def derive_test_type(name: str) -> str:
@@ -181,6 +231,8 @@ def unique_amka(start_num: int) -> str:
 
 
 class BedAllocator:
+    """Track bed usage while synthetic hospitalizations are being created."""
+
     def __init__(self, beds_df: pd.DataFrame):
         self.by_dept = defaultdict(list)
         for row in beds_df.itertuples(index=False):
@@ -198,10 +250,7 @@ class BedAllocator:
             if all(not self.overlaps(start_ts, end_ts, s, e) for s, e in self.busy[bed_id]):
                 self.busy[bed_id].append((start_ts, end_ts))
                 return bed_id
-        # fallback: choose least loaded bed in department
-        bed_id = min(self.by_dept[department_id], key=lambda b: len(self.busy[b]))
-        self.busy[bed_id].append((start_ts, end_ts))
-        return bed_id
+        return None
 
 
 def resolve_source_file(source_dir: Path, candidates):
@@ -276,52 +325,138 @@ def read_excel_flexible(path: Path, **kwargs):
     return pd.read_excel(path, engine=engine, **kwargs)
 
 
-def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | None = None, allow_demo_drugs: bool = True):
-    out_ref_dir.mkdir(parents=True, exist_ok=True)
+def normalize_ken_dataframe(raw: pd.DataFrame) -> pd.DataFrame:
+    """Normalize official or fallback KEN exports to the schema column order."""
 
-    # ICD-10
-    icd_path = resolve_source_file(source_dir, [
-        "4.2 Κωδικοί ICD-10 15-12-2011 (2).xlsx",
-        "4.2 Κωδικοί ICD-10 15-12-2011 (2).xls",
-        "4.2 Κωδικοί ICD-10 15-12-2011 (2).xlsx",
-        "4.2 Κωδικοί ICD-10 15-12-2011 (2).xls",
-    ])
-    icd_raw = read_excel_flexible(icd_path, sheet_name=0, header=None, names=["icd10_code", "icd10_description"])
-    icd = icd_raw.copy()
-    icd["icd10_code"] = icd["icd10_code"].map(normalize_space).str.upper()
-    icd["icd10_description"] = icd["icd10_description"].map(normalize_space)
-    icd = icd[icd["icd10_code"].notna() & icd["icd10_description"].notna()].drop_duplicates().reset_index(drop=True)
-    icd.to_csv(out_ref_dir / "icd10_diagnosis.csv", index=False)
+    df = raw.copy()
+    normalized_columns = {str(c).strip().lower(): c for c in df.columns}
+    if "ken_code" in normalized_columns:
+        rename = {
+            normalized_columns["ken_code"]: "ken_code",
+            normalized_columns.get("ken_description", "ken_description"): "ken_description",
+            normalized_columns.get("basic_cost", "basic_cost"): "basic_cost",
+            normalized_columns.get("mean_duration_days", "mean_duration_days"): "mean_duration_days",
+            normalized_columns.get("extra_daily_cost", "extra_daily_cost"): "extra_daily_cost",
+        }
+        df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
+    else:
+        cols = list(df.columns)
+        rename = {
+            cols[0]: "ken_code",
+            cols[1]: "ken_description",
+            cols[2]: "basic_cost",
+            cols[3]: "mean_duration_days",
+        }
+        if len(cols) > 4:
+            rename[cols[4]] = "extra_daily_cost"
+        df = df.rename(columns=rename)
 
-    # KEN intentionally skipped: generated fallback only.
-    # The official KEN .doc source is ignored in this version.
-    demo_ken_rows = [
-        ("DKEN001", "Demo cardiology short stay", 1200.00, 3),
-        ("DKEN002", "Demo cardiology complex stay", 4200.00, 8),
-        ("DKEN003", "Demo general surgery simple procedure", 1800.00, 4),
-        ("DKEN004", "Demo general surgery complex procedure", 6200.00, 10),
-        ("DKEN005", "Demo ICU respiratory support", 8500.00, 12),
-        ("DKEN006", "Demo neurology admission", 2300.00, 6),
-        ("DKEN007", "Demo orthopedic admission", 3100.00, 7),
-        ("DKEN008", "Demo pulmonary infection", 1600.00, 5),
-        ("DKEN009", "Demo gastroenterology admission", 1400.00, 4),
-        ("DKEN010", "Demo oncology admission", 3600.00, 9),
-        ("DKEN011", "Demo pediatrics admission", 900.00, 3),
-        ("DKEN012", "Demo ophthalmology procedure", 1000.00, 2),
-        ("DKEN013", "Demo ENT admission", 950.00, 3),
-        ("DKEN014", "Demo nephrology admission", 2800.00, 7),
-        ("DKEN015", "Demo psychiatry admission", 1700.00, 8),
-        ("DKEN016", "Demo internal medicine admission", 1500.00, 5),
-        ("DKEN017", "Demo emergency observation", 600.00, 1),
-        ("DKEN018", "Demo high cost transplant-like case", 18000.00, 20),
-        ("DKEN019", "Demo diagnostic same-day case", 450.00, 1),
-        ("DKEN020", "Demo therapeutic intervention", 2500.00, 6),
+    required = ["ken_code", "ken_description", "basic_cost", "mean_duration_days"]
+    df = df[[c for c in required + ["extra_daily_cost"] if c in df.columns]].copy()
+    df["ken_code"] = df["ken_code"].map(normalize_space).str.upper()
+    df["ken_description"] = df["ken_description"].map(normalize_space)
+    df["basic_cost"] = pd.to_numeric(df["basic_cost"].map(parse_money_eur), errors="coerce")
+    df["mean_duration_days"] = pd.to_numeric(df["mean_duration_days"], errors="coerce")
+    df = df[
+        df["ken_code"].notna()
+        & df["ken_description"].notna()
+        & df["basic_cost"].notna()
+        & df["mean_duration_days"].notna()
+    ].copy()
+    df = df[~df["ken_code"].str.lower().eq("ken_code")]
+    df = df[df["ken_code"].str.match(r"^[A-ZΑ-Ω][A-ZΑ-Ω0-9-]{1,12}$", na=False)]
+    df["basic_cost"] = df["basic_cost"].round(2)
+    df["mean_duration_days"] = df["mean_duration_days"].astype(int).clip(lower=1)
+    if "extra_daily_cost" in df.columns:
+        df["extra_daily_cost"] = pd.to_numeric(df["extra_daily_cost"].map(parse_money_eur), errors="coerce")
+    else:
+        df["extra_daily_cost"] = np.nan
+    missing_extra = df["extra_daily_cost"].isna()
+    df.loc[missing_extra, "extra_daily_cost"] = (
+        df.loc[missing_extra, "basic_cost"] / df.loc[missing_extra, "mean_duration_days"]
+    ).round(2)
+    return df[["ken_code", "ken_description", "basic_cost", "mean_duration_days", "extra_daily_cost"]].drop_duplicates("ken_code").reset_index(drop=True)
+
+
+def is_demo_ken(df: pd.DataFrame) -> bool:
+    return not df.empty and df["ken_code"].astype(str).str.startswith("DKEN").all()
+
+
+def parse_ken_from_docx(document) -> pd.DataFrame:
+    rows = []
+    for table in document.tables:
+        for row in table.rows:
+            cells = [normalize_space(cell.text) for cell in row.cells]
+            cells = [cell for cell in cells if cell]
+            if len(cells) < 4:
+                continue
+            code = cells[0]
+            if not re.match(r"^[A-ZΑ-Ω][A-ZΑ-Ω0-9-]{1,12}$", code or ""):
+                continue
+            numeric_cells = [cell for cell in cells if parse_money_eur(cell) is not None]
+            day_cells = [cell for cell in cells if re.fullmatch(r"\d+", str(cell))]
+            if not numeric_cells or not day_cells:
+                continue
+            rows.append((code, cells[1], parse_money_eur(numeric_cells[0]), int(day_cells[-1])))
+    return normalize_ken_dataframe(pd.DataFrame(rows, columns=["ken_code", "ken_description", "basic_cost", "mean_duration_days"]))
+
+
+def load_ken_reference(source_dir: Path, out_ref_dir: Path):
+    """Prefer improved official KEN CSVs, then parse Word sources, then use demo fallback."""
+
+    csv_candidates = [
+        out_ref_dir / "ken.csv",
+        source_dir / "data" / "reference" / "ken.csv",
+        source_dir / "reference" / "ken.csv",
     ]
-    ken = pd.DataFrame(demo_ken_rows, columns=["ken_code", "ken_description", "basic_cost", "mean_duration_days"])
-    ken["extra_daily_cost"] = (ken["basic_cost"] / ken["mean_duration_days"].replace(0, 1)).round(2)
-    ken.to_csv(out_ref_dir / "ken.csv", index=False)
+    if source_dir.exists():
+        csv_candidates.extend(source_dir.rglob("ken.csv"))
 
-    # ICD-10 ↔ KEN mapping intentionally generated for synthetic data only.
+    official_ken = []
+    fallback_ken = []
+    seen = set()
+    for csv_path in csv_candidates:
+        if not csv_path.exists() or csv_path in seen:
+            continue
+        seen.add(csv_path)
+        try:
+            candidate = normalize_ken_dataframe(pd.read_csv(csv_path, header=None))
+        except Exception:
+            try:
+                candidate = normalize_ken_dataframe(pd.read_csv(csv_path))
+            except Exception:
+                continue
+        if candidate.empty:
+            continue
+        if is_demo_ken(candidate):
+            fallback_ken.append(candidate)
+        else:
+            official_ken.append(candidate)
+    if official_ken:
+        return max(official_ken, key=len), "official_csv"
+
+    try:
+        ken_path = resolve_source_file(source_dir, [
+            "4.1 Λίστα Κλειστών Ενοποιημένων Νοσηλίων (2).docx",
+            "4.1 Λίστα Κλειστών Ενοποιημένων Νοσηλίων (2).doc",
+            "4.1 Λίστα Κλειστών Ενοποιημένων Νοσηλίων (3).docx",
+            "4.1 Λίστα Κλειστών Ενοποιημένων Νοσηλίων (3).doc",
+        ])
+        source, kind = read_word_table_or_text(ken_path)
+        ken = parse_ken_from_docx(source) if kind == "docx" else normalize_ken_dataframe(parse_ken_from_text(source))
+        if not ken.empty and not is_demo_ken(ken):
+            return ken, "official_word"
+    except Exception:
+        pass
+
+    if fallback_ken:
+        return max(fallback_ken, key=len), "demo_existing"
+
+    ken = normalize_ken_dataframe(pd.DataFrame(DEMO_KEN_ROWS, columns=["ken_code", "ken_description", "basic_cost", "mean_duration_days"]))
+    return ken, "demo_generated"
+
+
+def build_generated_icd10_ken_map(icd: pd.DataFrame, ken: pd.DataFrame) -> pd.DataFrame:
     icd_prefixes = (
         icd["icd10_code"]
         .astype(str)
@@ -346,10 +481,74 @@ def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | No
     ordered_prefixes = [pfx for pfx in preferred_prefixes if pfx in available]
     ordered_prefixes += [pfx for pfx in icd_prefixes if pfx not in set(ordered_prefixes)]
     ken_codes = ken["ken_code"].tolist()
-    icd_ken = pd.DataFrame([
+    return pd.DataFrame([
         {"mdc_code": str((i % 25) + 1), "ken_code": ken_codes[i % len(ken_codes)], "icd10_code_prefix": pfx}
         for i, pfx in enumerate(ordered_prefixes)
     ])
+
+
+def load_icd10_ken_map(source_dir: Path, icd: pd.DataFrame, ken: pd.DataFrame):
+    """Use the official ICD10-KEN map when it is compatible with the active KEN table."""
+
+    ken_codes = set(ken["ken_code"])
+    icd_prefixes = set(
+        icd["icd10_code"]
+        .astype(str)
+        .str.replace(".", "", regex=False)
+        .str.extract(r"^([A-ZΑ-Ω]\d{2})")[0]
+        .dropna()
+    )
+    try:
+        map_path = resolve_source_file(source_dir, [
+            "4.4 Λίστα Αντιστοιχήσεων ICD 10 - KEN (1).xlsx",
+            "4.4 Λίστα Αντιστοιχήσεων ICD 10 - KEN (1).xls",
+        ])
+        raw = read_excel_flexible(map_path, sheet_name=0, header=0)
+        if raw.shape[1] >= 3:
+            official = pd.DataFrame({
+                "mdc_code": raw.iloc[:, 0].map(lambda v: f"{int(v):02d}" if pd.notna(v) and str(v).replace(".", "", 1).isdigit() else normalize_space(v)),
+                "ken_code": raw.iloc[:, 1].map(normalize_space).str.upper(),
+                "icd10_code_prefix": raw.iloc[:, 2].map(normalize_space).str.upper().str.replace(".", "", regex=False),
+            })
+            official = official[
+                official["ken_code"].isin(ken_codes)
+                & official["icd10_code_prefix"].isin(icd_prefixes)
+            ].drop_duplicates(["ken_code", "icd10_code_prefix"]).reset_index(drop=True)
+            if not official.empty:
+                return official, "official"
+    except Exception:
+        pass
+
+    return build_generated_icd10_ken_map(icd, ken), "generated_compatible"
+
+
+def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | None = None, allow_demo_drugs: bool = True):
+    """Load official reference sources and write normalized reference CSVs."""
+
+    out_ref_dir.mkdir(parents=True, exist_ok=True)
+
+    # ICD-10
+    icd_path = resolve_source_file(source_dir, [
+        "4.2 Κωδικοί ICD-10 15-12-2011 (2).xlsx",
+        "4.2 Κωδικοί ICD-10 15-12-2011 (2).xls",
+        "4.2 Κωδικοί ICD-10 15-12-2011 (2).xlsx",
+        "4.2 Κωδικοί ICD-10 15-12-2011 (2).xls",
+    ])
+    icd_raw = read_excel_flexible(icd_path, sheet_name=0, header=None, names=["icd10_code", "icd10_description"])
+    icd = icd_raw.copy()
+    icd["icd10_code"] = icd["icd10_code"].map(normalize_space).str.upper()
+    icd["icd10_description"] = icd["icd10_description"].map(normalize_space)
+    icd = icd[icd["icd10_code"].notna() & icd["icd10_description"].notna()].drop_duplicates().reset_index(drop=True)
+    icd.to_csv(out_ref_dir / "icd10_diagnosis.csv", index=False)
+
+    # KEN: prefer the improved official CSV that may already exist in the
+    # output bundle, then official Word sources, and only then demo fallback.
+    ken, ken_mode = load_ken_reference(source_dir, out_ref_dir)
+    ken.to_csv(out_ref_dir / "ken.csv", index=False)
+
+    # ICD-10 ↔ KEN: official mapping is used only after filtering it against
+    # the exact KEN table being written, so hospitalizations cannot drift.
+    icd_ken, icd_ken_mode = load_icd10_ken_map(source_dir, icd, ken)
     icd_ken.to_csv(out_ref_dir / "icd10_ken_map.csv", index=False)
 
     # Procedure catalog
@@ -366,8 +565,21 @@ def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | No
     proc = proc[proc["procedure_code"].notna() & proc["procedure_name"].notna()]
     proc = proc[proc["procedure_code"].str.match(r"^[A-ZΑ-Ω][A-Z0-9]{4,}$", na=False)].drop_duplicates("procedure_code").reset_index(drop=True)
     proc["procedure_category"] = proc["procedure_name"].apply(derive_proc_category)
+    proc["standard_duration_min"] = proc.apply(lambda r: derive_standard_duration_min(r["procedure_name"], r["procedure_category"]), axis=1)
+    proc["standard_cost"] = proc.apply(lambda r: derive_standard_cost(r["procedure_name"], r["procedure_category"]), axis=1)
     proc["required_place_type"] = proc.apply(lambda r: derive_place_type(r["procedure_name"], r["procedure_category"]), axis=1)
-    proc.to_csv(out_ref_dir / "procedure_catalog.csv", index=False)
+    proc = proc[[
+        "procedure_code",
+        "procedure_name",
+        "procedure_category",
+        "required_place_type",
+        "standard_duration_min",
+        "standard_cost",
+    ]]
+    proc[["procedure_code", "procedure_name", "procedure_category", "required_place_type"]].to_csv(
+        out_ref_dir / "procedure_catalog.csv",
+        index=False,
+    )
 
     # Lab test catalog derived from official procedure file
     lab = proc[proc["procedure_category"] == "DIAGNOSTIC"].copy()
@@ -377,7 +589,9 @@ def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | No
 
     meta = {
         "seed": SEED,
-        "note": "ICD-10 and procedure references are cleaned from uploaded files. KEN is intentionally synthetic/fallback only in this version.",
+        "note": "ICD-10, KEN, ICD10-KEN, and procedure references are cleaned from the best available official/improved sources. Demo KEN is used only when no official KEN data exists.",
+        "ken_mode": ken_mode,
+        "icd10_ken_mode": icd_ken_mode,
         "ema_mode": None,
     }
 
@@ -459,6 +673,8 @@ def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | No
 
 
 def build_people_and_org(gen_dir: Path):
+    """Create departments, staff, beds, and operating/procedure places."""
+
     departments = []
     floor_labels = ["B1/Building A", "1/Building A", "2/Building A", "3/Building A", "1/Building B", "2/Building B", "3/Building B"]
     for idx, (dname, _) in enumerate(DEPARTMENT_SPECS, start=1):
@@ -624,16 +840,17 @@ def build_people_and_org(gen_dir: Path):
         })
     operating_place_df = pd.DataFrame(operating_places)
 
-    for name, df in {
+    output_frames = {
         "department": department_df,
         "personnel": personnel_df,
         "doctor": doctor_df,
         "doctor_department": doctor_department_df,
         "nurse": nurse_df,
         "administrative_staff": admin_df,
-        "bed": bed_df,
+        "bed": bed_df[["bed_id", "department_id", "bed_type", "bed_status"]],
         "operating_place": operating_place_df,
-    }.items():
+    }
+    for name, df in output_frames.items():
         df.to_csv(gen_dir / f"{name}.csv", index=False)
 
     return {
@@ -648,7 +865,9 @@ def build_people_and_org(gen_dir: Path):
     }
 
 
-def build_patients(gen_dir: Path, count=230):
+def build_patients(gen_dir: Path, count=500):
+    """Create patients and optional emergency contacts."""
+
     patient_rows, contact_rows = [], []
     amka_counter = 30000000000
     for i in range(count):
@@ -692,6 +911,8 @@ def build_patients(gen_dir: Path, count=230):
 
 
 def build_shifts(gen_dir: Path, org):
+    """Create a one-week roster that respects the schema shift rules."""
+
     dept_df = org["department"]
     doctor_df = org["doctor"]
     nurse_df = org["nurse"]
@@ -738,6 +959,7 @@ def build_shifts(gen_dir: Path, org):
                     "shift_type": stype,
                     "start_time": start_time,
                     "end_time": end_time,
+                    "shift_status": "PROCESSING",
                 })
                 # doctors: one senior, one mid, one remaining not yet used in day
                 doc_candidates = []
@@ -774,7 +996,9 @@ def build_shifts(gen_dir: Path, org):
     return {"department_shift": shift_df, "shift_assignment": assign_df}
 
 
-def build_emergency_visits(gen_dir: Path, patients, org, count=650):
+def build_emergency_visits(gen_dir: Path, patients, org, count=1500):
+    """Create emergency visits with triage levels and service timestamps."""
+
     patient_df = patients["patient"]
     nurse_df = org["nurse"]
     dep_df = org["department"]
@@ -798,6 +1022,7 @@ def build_emergency_visits(gen_dir: Path, patients, org, count=650):
             4: random.randint(20, 120),
             5: random.randint(30, 180),
         }[level]
+        is_waiting = random.random() < 0.15
         service_start = arrival + timedelta(minutes=wait_minutes)
         service_end = service_start + timedelta(minutes=random.randint(20, 180))
         hospitalized = random.random() < {1: 0.92, 2: 0.74, 3: 0.48, 4: 0.22, 5: 0.08}[level]
@@ -809,11 +1034,11 @@ def build_emergency_visits(gen_dir: Path, patients, org, count=650):
             "arrival_ts": arrival.strftime("%Y-%m-%d %H:%M:%S"),
             "symptoms": pick(SYMPTOMS_BY_LEVEL[level]),
             "emergency_level": level,
-            "service_start_ts": service_start.strftime("%Y-%m-%d %H:%M:%S"),
-            "service_end_ts": service_end.strftime("%Y-%m-%d %H:%M:%S"),
+            "service_start_ts": "" if is_waiting else service_start.strftime("%Y-%m-%d %H:%M:%S"),
             "disposition": "HOSPITALIZED" if hospitalized else "DISCHARGED",
             "referred_department_id": referred_dep,
             "discharge_instructions": "" if hospitalized else "Rest, hydration, and outpatient follow-up",
+            "status": "WAITING" if is_waiting else "CALLED",
         })
         visit_id += 1
 
@@ -822,7 +1047,18 @@ def build_emergency_visits(gen_dir: Path, patients, org, count=650):
     return {"emergency_visit": ev_df}
 
 
-def build_clinical_events(gen_dir: Path, ref, org, patients):
+def build_clinical_events(
+    gen_dir: Path,
+    ref,
+    org,
+    patients,
+    hospitalization_count=1200,
+    lab_test_count=800,
+    procedure_event_count=500,
+    prescription_count=1000,
+):
+    """Create hospitalizations and related clinical events."""
+
     dept_df = org["department"]
     bed_df = org["bed"]
     patient_df = patients["patient"]
@@ -837,7 +1073,11 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
     for row in icd_df.itertuples(index=False):
         prefix_to_codes[row.prefix3].append(row.icd10_code)
 
+    valid_ken_codes = set(ref["ken"]["ken_code"])
     map_df = ref["icd10_ken"]
+    map_df = map_df[map_df["ken_code"].isin(valid_ken_codes)].copy()
+    if map_df.empty:
+        raise ValueError("ICD10-KEN map has no rows compatible with ken.csv.")
     prefix_to_kens = defaultdict(list)
     for row in map_df.itertuples(index=False):
         prefix_to_kens[row.icd10_code_prefix].append(row.ken_code)
@@ -917,14 +1157,25 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
         return actual_days, total_cost
 
     ken_row_lookup = {r.ken_code: r for r in ref["ken"].itertuples(index=False)}
-    proc_cat = ref["procedure_catalog"]
+    proc_cat = ref["procedure_catalog"].drop_duplicates("procedure_code")
+    proc_place_type = dict(proc_cat[["procedure_code", "required_place_type"]].itertuples(index=False, name=None))
     surg_proc = proc_cat[proc_cat["procedure_category"] == "SURGICAL"]["procedure_code"].tolist()
     diag_proc = proc_cat[proc_cat["procedure_category"] == "DIAGNOSTIC"]["procedure_code"].tolist()
+    if not surg_proc and not diag_proc:
+        raise ValueError("procedure_catalog.csv has no usable procedure codes.")
+    if not surg_proc:
+        surg_proc = diag_proc
+    if not diag_proc:
+        diag_proc = surg_proc
     lab_cat = ref["lab_test_catalog"]
 
     # --- hospitalizations: targeted first ---
     hosp_id = 1
     used_hosp_patient = set()
+    patient_schedules = defaultdict(list)
+
+    def patient_is_available(patient_amka, start_ts, end_ts):
+        return all(not (start_ts < e and s < end_ts) for s, e in patient_schedules[patient_amka])
 
     def add_hospitalization(patient_amka, department_id, admission_ts, stay_days, prefix=None, forced_ken=None):
         nonlocal hosp_id
@@ -934,14 +1185,17 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
         adm_code = pick_full_icd(prefix_local)
         discharge_code = adm_code if random.random() < 0.65 else pick_full_icd(prefix_local)
         discharge_ts = admission_ts + timedelta(days=stay_days, hours=random.randint(2, 18))
+        if not patient_is_available(patient_amka, admission_ts, discharge_ts):
+            return False
         bed_id = allocator.allocate(department_id, admission_ts, discharge_ts)
+        if bed_id is None:
+            return False
         actual_days, total_cost = compute_total_cost(ken_code, admission_ts, discharge_ts)
         hosp_rows.append({
             "hosp_id": hosp_id,
             "patient_amka": patient_amka,
             "department_id": department_id,
             "bed_id": bed_id,
-            "emergency_visit_id": "",
             "ken_code": ken_code,
             "admission_ts": admission_ts.strftime("%Y-%m-%d %H:%M:%S"),
             "discharge_ts": discharge_ts.strftime("%Y-%m-%d %H:%M:%S"),
@@ -952,10 +1206,10 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
         # doctors
         dep_docs = docs_by_dep[int(department_id)]
         primary = pick([d["amka"] for d in dep_docs if d["rank"] in ("DIRECTOR","CONSULTANT_A","CONSULTANT_B")])
-        hosp_doctor_rows.append({"hosp_id": hosp_id, "doctor_amka": primary, "doctor_role": "PRIMARY", "is_primary": 1})
+        hosp_doctor_rows.append({"hosp_id": hosp_id, "doctor_amka": primary})
         others = random.sample([d["amka"] for d in dep_docs if d["amka"] != primary], k=random.randint(0,2))
         for od in others:
-            hosp_doctor_rows.append({"hosp_id": hosp_id, "doctor_amka": od, "doctor_role": "CONSULTING", "is_primary": 0})
+            hosp_doctor_rows.append({"hosp_id": hosp_id, "doctor_amka": od})
         # evaluation on most discharges
         if random.random() < 0.74:
             eval_rows.append({
@@ -975,7 +1229,9 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
                 ]),
             })
         used_hosp_patient.add((hosp_id, patient_amka))
+        patient_schedules[patient_amka].append((admission_ts, discharge_ts))
         hosp_id += 1
+        return True
 
     # Q3 pattern: >3 hospitalizations in same department
     for p in repeat_same_dept_patients:
@@ -1007,14 +1263,19 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
                 admission = datetime(year, random.randint(1, 11), random.randint(1, 20), 11, 0, 0)
                 add_hospitalization(p, dep_id, admission, stay_days=random.randint(1, 5), prefix=prefix)
 
-    # Fill to target 550
-    target_hosp = 550
-    while len(hosp_rows) < target_hosp:
+    # Fill to the requested target while preserving no-overlap bed and patient rules.
+    attempts = 0
+    max_attempts = hospitalization_count * 80
+    while len(hosp_rows) < hospitalization_count and attempts < max_attempts:
+        attempts += 1
         p = pick(patient_ids)
         dep_id = pick(dept_ids)
         admission = datetime(2025,1,1,8,0,0) + timedelta(days=random.randint(0, 715), hours=random.randint(0, 16))
         prefix = None
         add_hospitalization(p, dep_id, admission, stay_days=random.randint(1, 12), prefix=prefix)
+
+    if len(hosp_rows) < hospitalization_count:
+        raise ValueError(f"Could only generate {len(hosp_rows)} hospitalizations without bed/patient overlaps.")
 
     hosp_df = pd.DataFrame(hosp_rows)
     hosp_doc_df = pd.DataFrame(hosp_doctor_rows).drop_duplicates()
@@ -1023,7 +1284,7 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
     # Lab tests
     test_id = 1
     lab_codes = list(lab_cat["test_code"])
-    for row in hosp_df.sample(n=260, random_state=SEED).itertuples(index=False):
+    for row in hosp_df.sample(n=min(lab_test_count, len(hosp_df)), random_state=SEED).itertuples(index=False):
         ordered_by = pick(hosp_doc_df.loc[hosp_doc_df["hosp_id"] == row.hosp_id, "doctor_amka"])
         start_dt = datetime.fromisoformat(row.admission_ts)
         end_dt = datetime.fromisoformat(row.discharge_ts)
@@ -1037,9 +1298,6 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
             "ordered_by_doctor_amka": ordered_by,
             "test_datetime": test_dt.strftime("%Y-%m-%d %H:%M:%S"),
             "result_text": pick(["Normal", "Mildly abnormal", "Follow-up required", "Improved from previous"]),
-            "result_numeric": result_numeric,
-            "result_unit": result_unit,
-            "cost": round(random.uniform(12.0, 180.0), 2),
         })
         test_id += 1
     lab_df = pd.DataFrame(lab_rows)
@@ -1048,17 +1306,23 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
     proc_event_id = 1
     place_schedules = defaultdict(list)
     doctor_schedules = defaultdict(list)
+    staff_schedules = defaultdict(list)
+
+    def staff_is_available(amka, start_ts, end_ts):
+        return all(not (start_ts < e and s < end_ts) for s, e in staff_schedules[amka])
 
     # pick top surgeons to dominate
     surgeon_candidates = doctor_df[doctor_df["specialization"].isin(["GENERAL_SURGERY","ORTHOPEDICS","CARDIOLOGY","GASTROENTEROLOGY","NEUROLOGY"])]
     top_surgeons = surgeon_candidates[surgeon_candidates["doctor_rank"].isin(["DIRECTOR","CONSULTANT_A","CONSULTANT_B"])].sample(n=12, random_state=SEED)["amka"].tolist()
     weighted_surgeons = top_surgeons + surgeon_candidates["amka"].tolist()
 
-    surgical_hosps = hosp_df.sample(n=180, random_state=SEED)
+    surgical_hosps = hosp_df.sample(n=min(procedure_event_count, len(hosp_df)), random_state=SEED)
     for row in surgical_hosps.itertuples(index=False):
         proc_code = pick(surg_proc if random.random() < 0.82 else diag_proc)
-        place_type = proc_cat.loc[proc_cat["procedure_code"] == proc_code, "required_place_type"].iloc[0]
+        place_type = proc_place_type[proc_code]
         place_ids = org["operating_place"].loc[org["operating_place"]["place_type"] == place_type, "place_id"].tolist()
+        if not place_ids:
+            continue
         chief = random.choice(weighted_surgeons if random.random() < 0.65 else surgeon_candidates["amka"].tolist())
         start_window = datetime.fromisoformat(row.admission_ts) + timedelta(hours=8)
         end_window = datetime.fromisoformat(row.discharge_ts) - timedelta(hours=6)
@@ -1077,8 +1341,11 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
                 continue
             if any(start_ts < e and s < end_ts for s, e in doctor_schedules[chief]):
                 continue
+            if not staff_is_available(chief, start_ts, end_ts):
+                continue
             place_schedules[place_id].append((start_ts, end_ts))
             doctor_schedules[chief].append((start_ts, end_ts))
+            staff_schedules[chief].append((start_ts, end_ts))
             proc_event_rows.append({
                 "procedure_event_id": proc_event_id,
                 "hosp_id": row.hosp_id,
@@ -1091,11 +1358,22 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
             })
             # participants: 1-2 doctors + 1 nurse
             dep_id = int(row.department_id)
-            dep_doc_pool = [d["amka"] for d in docs_by_dep[dep_id] if d["amka"] != chief]
-            dep_nurse_pool = nurses_by_dep[dep_id]
+            dep_doc_pool = [
+                d["amka"]
+                for d in docs_by_dep[dep_id]
+                if d["amka"] != chief and staff_is_available(d["amka"], start_ts, end_ts)
+            ]
+            dep_nurse_pool = [
+                amka for amka in nurses_by_dep[dep_id]
+                if staff_is_available(amka, start_ts, end_ts)
+            ]
             for helper in random.sample(dep_doc_pool, k=min(len(dep_doc_pool), random.randint(1, 2))):
-                proc_part_rows.append({"procedure_event_id": proc_event_id, "personnel_amka": helper, "participant_role": "ASSISTANT_DOCTOR"})
-            proc_part_rows.append({"procedure_event_id": proc_event_id, "personnel_amka": pick(dep_nurse_pool), "participant_role": "SCRUB_NURSE"})
+                proc_part_rows.append({"procedure_event_id": proc_event_id, "personnel_amka": helper})
+                staff_schedules[helper].append((start_ts, end_ts))
+            if dep_nurse_pool:
+                nurse_helper = pick(dep_nurse_pool)
+                proc_part_rows.append({"procedure_event_id": proc_event_id, "personnel_amka": nurse_helper})
+                staff_schedules[nurse_helper].append((start_ts, end_ts))
             proc_event_id += 1
             placed = True
             break
@@ -1105,9 +1383,30 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
     proc_event_df = pd.DataFrame(proc_event_rows)
     proc_part_df = pd.DataFrame(proc_part_rows).drop_duplicates()
 
+    # Keep the loaded bed table consistent with the dataset validation date.
+    # Historic hospitalizations do not change current bed status, but active
+    # hospitalizations at DATASET_AS_OF_TS should be reflected as occupied.
+    active_bed_ids = set(
+        hosp_df.loc[
+            (pd.to_datetime(hosp_df["admission_ts"]) <= DATASET_AS_OF_TS)
+            & (pd.to_datetime(hosp_df["discharge_ts"]) > DATASET_AS_OF_TS),
+            "bed_id",
+        ]
+    )
+    bed_status_df = org["bed"].copy()
+    bed_status_df.loc[bed_status_df["bed_id"].isin(active_bed_ids), "bed_status"] = "OCCUPIED"
+    bed_status_df.loc[
+        (~bed_status_df["bed_id"].isin(active_bed_ids)) & (bed_status_df["bed_status"] == "OCCUPIED"),
+        "bed_status",
+    ] = "AVAILABLE"
+    bed_status_df[["bed_id", "department_id", "bed_type", "bed_status"]].to_csv(gen_dir / "bed.csv", index=False)
+    org["bed"] = bed_status_df
+
     # Allergies
     substances = ref["active_substance"].copy()
     substance_ids = list(substances["substance_id"])
+    if not substance_ids:
+        raise ValueError("active_substance.csv is empty; cannot create patient allergies safely.")
     common_substance_ids = {s: int(substances.loc[substances["substance_name"] == s, "substance_id"].iloc[0]) for pair in COMMON_SUBSTANCE_PAIRS for s in pair if s in set(substances["substance_name"])}
     allergy_patients = random.sample(patient_ids, 70)
     for p in allergy_patients:
@@ -1122,6 +1421,8 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
     # Prescriptions (query-driven for Q10)
     drug_df = ref["drug"].copy()
     das = ref["drug_active_substance"].copy()
+    if drug_df.empty or das.empty:
+        raise ValueError("Drug reference tables are empty; cannot create prescriptions safely.")
     sub_name = dict(ref["active_substance"][["substance_id","substance_name"]].itertuples(index=False, name=None))
     drug_to_subs = defaultdict(set)
     for r in das.itertuples(index=False):
@@ -1151,7 +1452,15 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
         d2_candidates = [d for d in drugs_by_sub.get(pair[1], []) if d in safe and d not in d1_candidates]
         if not d1_candidates or not d2_candidates:
             continue
-        start_base = datetime.fromisoformat(row.admission_ts) + timedelta(hours=random.randint(3, 24))
+        admission_ts = datetime.fromisoformat(row.admission_ts)
+        discharge_ts = datetime.fromisoformat(row.discharge_ts)
+        max_start_hours = max(1, int((discharge_ts - admission_ts).total_seconds() // 3600) - 2)
+        if max_start_hours < 3:
+            continue
+        start_base = admission_ts + timedelta(hours=random.randint(3, min(24, max_start_hours)))
+        end_dt = min(discharge_ts, start_base + timedelta(days=random.randint(2, 6)))
+        if end_dt <= start_base:
+            continue
         doctor_choices = hosp_doc_df.loc[hosp_doc_df["hosp_id"] == row.hosp_id, "doctor_amka"].tolist()
         for drug_id in [pick(d1_candidates), pick(d2_candidates)]:
             prescription_rows.append({
@@ -1163,12 +1472,12 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
                 "dosage": pick(["1 tablet", "500 mg", "1 vial", "1 capsule", "40 mg"]),
                 "frequency": pick(["BID", "TID", "QD", "Q6H"]),
                 "start_datetime": start_base.strftime("%Y-%m-%d %H:%M:%S"),
-                "end_datetime": (start_base + timedelta(days=random.randint(2,6))).strftime("%Y-%m-%d %H:%M:%S"),
+                "end_datetime": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
             })
             prescription_id += 1
 
     # fill remainder
-    while len(prescription_rows) < 360:
+    while len(prescription_rows) < prescription_count:
         row = hosp_df.sample(n=1).iloc[0]
         safe = safe_drugs_for_patient(row.patient_amka)
         if not safe:
@@ -1191,7 +1500,46 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
             "end_datetime": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
         })
         prescription_id += 1
-    presc_df = pd.DataFrame(prescription_rows).drop_duplicates(subset=["doctor_amka","patient_amka","drug_id","start_datetime"])
+    presc_df = pd.DataFrame(prescription_rows).drop_duplicates(subset=["doctor_amka", "patient_amka", "drug_id", "start_datetime"])
+    seen_prescriptions = set(
+        presc_df[["doctor_amka", "patient_amka", "drug_id", "start_datetime"]]
+        .astype(str)
+        .itertuples(index=False, name=None)
+    )
+    prescription_rows = presc_df.to_dict("records")
+    attempts = 0
+    while len(prescription_rows) < prescription_count and attempts < prescription_count * 20:
+        attempts += 1
+        row = hosp_df.sample(n=1, random_state=SEED + attempts).iloc[0]
+        safe = safe_drugs_for_patient(row.patient_amka)
+        if not safe:
+            continue
+        start_base = datetime.fromisoformat(row.admission_ts) + timedelta(hours=random.randint(1, 48), minutes=attempts % 60)
+        end_limit = datetime.fromisoformat(row.discharge_ts)
+        end_dt = min(end_limit, start_base + timedelta(days=random.randint(1, 7)))
+        if end_dt <= start_base:
+            continue
+        doctor_choices = hosp_doc_df.loc[hosp_doc_df["hosp_id"] == row.hosp_id, "doctor_amka"].tolist()
+        drug_id = pick(safe)
+        key = (str(pick(doctor_choices)), str(row.patient_amka), str(drug_id), start_base.strftime("%Y-%m-%d %H:%M:%S"))
+        if key in seen_prescriptions:
+            continue
+        seen_prescriptions.add(key)
+        prescription_rows.append({
+            "prescription_id": prescription_id,
+            "hosp_id": int(row.hosp_id),
+            "patient_amka": row.patient_amka,
+            "doctor_amka": key[0],
+            "drug_id": drug_id,
+            "dosage": pick(["1 tablet", "500 mg", "1 vial", "1 capsule", "40 mg"]),
+            "frequency": pick(["BID", "TID", "QD", "Q6H", "Q8H"]),
+            "start_datetime": key[3],
+            "end_datetime": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
+        })
+        prescription_id += 1
+    presc_df = pd.DataFrame(prescription_rows).sort_values("prescription_id").reset_index(drop=True)
+    if len(presc_df) < 360:
+        raise ValueError("Could not generate 360 unique, allergy-safe prescriptions.")
 
     # Minimal images
     for img_id, dep in enumerate(dept_df.itertuples(index=False), start=1):
@@ -1225,6 +1573,48 @@ def build_clinical_events(gen_dir: Path, ref, org, patients):
         df.to_csv(gen_dir / f"{name}.csv", index=False)
 
     return outputs
+
+
+def validate_generated_bundle(ref, org, patients, generated):
+    """Fail fast if generated clinical rows drift from the reference CSVs."""
+
+    def require_subset(label, values, allowed):
+        missing = sorted(set(pd.Series(values).dropna().astype(str)) - set(pd.Series(allowed).dropna().astype(str)))
+        if missing:
+            preview = ", ".join(missing[:10])
+            raise ValueError(f"{label} contains values missing from its reference table: {preview}")
+
+    hospitalization = generated["hospitalization"]
+    procedure_event = generated["procedure_event"]
+    prescription = generated["prescription"]
+    patient_allergy = generated["patient_allergy"]
+
+    require_subset("hospitalization.ken_code", hospitalization["ken_code"], ref["ken"]["ken_code"])
+    require_subset("icd10_ken_map.ken_code", ref["icd10_ken"]["ken_code"], ref["ken"]["ken_code"])
+    require_subset("hospitalization.admission_icd10_code", hospitalization["admission_icd10_code"], ref["icd10"]["icd10_code"])
+    require_subset("hospitalization.discharge_icd10_code", hospitalization["discharge_icd10_code"], ref["icd10"]["icd10_code"])
+    require_subset("lab_test.test_code", generated["lab_test"]["test_code"], ref["lab_test_catalog"]["test_code"])
+
+    require_subset("procedure_event.procedure_code", procedure_event["procedure_code"], ref["procedure_catalog"]["procedure_code"])
+    proc_place = procedure_event.merge(
+        ref["procedure_catalog"][["procedure_code", "required_place_type"]],
+        on="procedure_code",
+        how="left",
+    ).merge(
+        org["operating_place"][["place_id", "place_type"]],
+        on="place_id",
+        how="left",
+    )
+    bad_place = proc_place[proc_place["required_place_type"] != proc_place["place_type"]]
+    if not bad_place.empty:
+        raise ValueError("procedure_event.place_id does not match procedure_catalog.required_place_type.")
+
+    require_subset("prescription.drug_id", prescription["drug_id"], ref["drug"]["drug_id"])
+    require_subset("patient_allergy.substance_id", patient_allergy["substance_id"], ref["active_substance"]["substance_id"])
+    require_subset("drug_active_substance.drug_id", ref["drug_active_substance"]["drug_id"], ref["drug"]["drug_id"])
+    require_subset("drug_active_substance.substance_id", ref["drug_active_substance"]["substance_id"], ref["active_substance"]["substance_id"])
+    require_subset("prescription.patient_amka", prescription["patient_amka"], patients["patient"]["patient_amka"])
+    require_subset("patient_allergy.patient_amka", patient_allergy["patient_amka"], patients["patient"]["patient_amka"])
 
 
 def write_load_sql(bundle_dir: Path):
@@ -1262,7 +1652,6 @@ def write_load_sql(bundle_dir: Path):
 
     load_lines += block('data/reference/icd10_diagnosis.csv', 'icd10_diagnosis', ['icd10_code','icd10_description'])
     load_lines += block('data/reference/ken.csv', 'ken', ['ken_code','ken_description','basic_cost','mean_duration_days','extra_daily_cost'])
-    load_lines += block('data/reference/icd10_ken_map.csv', 'icd10_ken_map', ['mdc_code','ken_code','icd10_code_prefix'])
     load_lines += block('data/reference/procedure_catalog.csv', 'procedure_catalog', ['procedure_code','procedure_name','procedure_category','required_place_type'])
     load_lines += block('data/reference/lab_test_catalog.csv', 'lab_test_catalog', ['test_code','test_name','test_type'])
     load_lines += block('data/reference/drug.csv', 'drug', ['drug_id','drug_name'])
@@ -1289,7 +1678,7 @@ def write_load_sql(bundle_dir: Path):
     load_lines += block('data/generated/doctor_department.csv', 'doctor_department', ['doctor_amka','department_id'])
     load_lines += block('data/generated/nurse.csv', 'nurse', ['amka','nurse_rank','department_id'])
     load_lines += block('data/generated/administrative_staff.csv', 'administrative_staff', ['amka','admin_role','office_work','department_id'])
-    load_lines += block('data/generated/bed.csv', 'bed', ['bed_id','department_id','bed_number','bed_type','bed_status'])
+    load_lines += block('data/generated/bed.csv', 'bed', ['bed_id','department_id','bed_type','bed_status'])
     load_lines += block('data/generated/operating_place.csv', 'operating_place', ['place_id','place_name','place_type','place_status'])
     load_lines += block('data/generated/patient.csv', 'patient', ['@patient_amka','@first_name','@last_name','@father_name','@age','@gender','@weight_kg','@height_cm','@address_line','@phone_number','@email','@profession','@nationality','@insurance_provider'], [
         "patient_amka = @patient_amka",
@@ -1314,13 +1703,21 @@ def write_load_sql(bundle_dir: Path):
         "phone_number = @phone_number",
         "email = NULLIF(@email, '')",
     ])
-    load_lines += block('data/generated/department_shift.csv', 'department_shift', ['shift_id','department_id','shift_date','shift_type','start_time','end_time'])
+    load_lines += block('data/generated/department_shift.csv', 'department_shift', ['shift_id','department_id','shift_date','shift_type','start_time','end_time','shift_status'])
     load_lines += block('data/generated/shift_assignment.csv', 'shift_assignment', ['@shift_id','@personnel_amka','@assigned_role'], [
         "shift_id = @shift_id",
         "personnel_amka = @personnel_amka",
         "assigned_role = NULLIF(@assigned_role, '')",
     ])
-    load_lines += block('data/generated/emergency_visit.csv', 'emergency_visit', ['@visit_id','@patient_amka','@triage_nurse_amka','@arrival_ts','@symptoms','@emergency_level','@service_start_ts','@service_end_ts','@disposition','@referred_department_id','@discharge_instructions'], [
+    load_lines += [
+        "-- Mark shifts as valid only after all staff assignments have loaded.",
+        "-- This activates the vol2 shift-composition and resident-supervisor checks.",
+        "UPDATE department_shift",
+        "SET shift_status = 'VALID'",
+        "WHERE shift_status = 'PROCESSING';",
+        "",
+    ]
+    load_lines += block('data/generated/emergency_visit.csv', 'emergency_visit', ['@visit_id','@patient_amka','@triage_nurse_amka','@arrival_ts','@symptoms','@emergency_level','@service_start_ts','@disposition','@referred_department_id','@discharge_instructions','@status'], [
         "visit_id = @visit_id",
         "patient_amka = @patient_amka",
         "triage_nurse_amka = @triage_nurse_amka",
@@ -1328,17 +1725,16 @@ def write_load_sql(bundle_dir: Path):
         "symptoms = @symptoms",
         "emergency_level = @emergency_level",
         "service_start_ts = NULLIF(@service_start_ts, '')",
-        "service_end_ts = NULLIF(@service_end_ts, '')",
         "disposition = @disposition",
         "referred_department_id = NULLIF(@referred_department_id, '')",
         "discharge_instructions = NULLIF(@discharge_instructions, '')",
+        "status = NULLIF(@status, '')",
     ])
-    load_lines += block('data/generated/hospitalization.csv', 'hospitalization', ['@hosp_id','@patient_amka','@department_id','@bed_id','@emergency_visit_id','@ken_code','@admission_ts','@discharge_ts','@admission_icd10_code','@discharge_icd10_code','@total_cost'], [
+    load_lines += block('data/generated/hospitalization.csv', 'hospitalization', ['@hosp_id','@patient_amka','@department_id','@bed_id','@ken_code','@admission_ts','@discharge_ts','@admission_icd10_code','@discharge_icd10_code','@total_cost'], [
         "hosp_id = @hosp_id",
         "patient_amka = @patient_amka",
         "department_id = @department_id",
         "bed_id = @bed_id",
-        "emergency_visit_id = NULLIF(@emergency_visit_id, '')",
         "ken_code = @ken_code",
         "admission_ts = @admission_ts",
         "discharge_ts = NULLIF(@discharge_ts, '')",
@@ -1346,20 +1742,17 @@ def write_load_sql(bundle_dir: Path):
         "discharge_icd10_code = NULLIF(@discharge_icd10_code, '')",
         "total_cost = @total_cost",
     ])
-    load_lines += block('data/generated/hospitalization_doctor.csv', 'hospitalization_doctor', ['hosp_id','doctor_amka','doctor_role','is_primary'])
-    load_lines += block('data/generated/lab_test.csv', 'lab_test', ['@test_id','@hosp_id','@test_code','@ordered_by_doctor_amka','@test_datetime','@result_text','@result_numeric','@result_unit','@cost'], [
+    load_lines += block('data/generated/hospitalization_doctor.csv', 'hospitalization_doctor', ['hosp_id','doctor_amka'])
+    load_lines += block('data/generated/lab_test.csv', 'lab_test', ['@test_id','@hosp_id','@test_code','@ordered_by_doctor_amka','@test_datetime','@result_text'], [
         "test_id = @test_id",
         "hosp_id = @hosp_id",
         "test_code = @test_code",
         "ordered_by_doctor_amka = @ordered_by_doctor_amka",
         "test_datetime = @test_datetime",
         "result_text = NULLIF(@result_text, '')",
-        "result_numeric = NULLIF(@result_numeric, '')",
-        "result_unit = NULLIF(@result_unit, '')",
-        "cost = @cost",
     ])
     load_lines += block('data/generated/procedure_event.csv', 'procedure_event', ['procedure_event_id','hosp_id','procedure_code','place_id','chief_surgeon_amka','start_ts','end_ts','actual_duration_min'])
-    load_lines += block('data/generated/procedure_participant.csv', 'procedure_participant', ['procedure_event_id','personnel_amka','participant_role'])
+    load_lines += block('data/generated/procedure_participant.csv', 'procedure_participant', ['procedure_event_id','personnel_amka'])
     load_lines += block('data/generated/patient_allergy.csv', 'patient_allergy', ['patient_amka','substance_id'])
     load_lines += block('data/generated/prescription.csv', 'prescription', ['@prescription_id','@hosp_id','@patient_amka','@doctor_amka','@drug_id','@dosage','@frequency','@start_datetime','@end_datetime'], [
         "prescription_id = @prescription_id",
@@ -1430,27 +1823,30 @@ This bundle contains:
 - a deterministic **query-driven synthetic dataset**;
     - a Python generator script: `scripts/generate_data.py`;
 - a convenience loader: `sql/load.sql`;
+- a portable setup runner: `sql/setup.sql`;
+- copies of `sql/install.sql`, `sql/schema.sql`, and `sql/validation.sql` from the project;
 - a table-to-CSV manifest: `TABLE_TO_CSV_MAP.csv`.
 
 ## Important schema assumptions
 
-This dataset targets the **intended final schema**, with the following minimal clarifications so the data load stays coherent:
+This dataset targets the **Ygeiopolis vol2 schema**, with the following minimal clarifications so the data load stays coherent:
 
 1. `nurse` uses `nurse_rank` (not `degree`).
-2. `bed` includes `bed_number`, unique per department.
-3. `emergency_visit` includes `referred_department_id`.
-4. `hospitalization_doctor` includes `doctor_role` and `is_primary`.
-5. `procedure_participant` includes `participant_role`.
-6. `ken.csv` is synthetic fallback data in this version; the official legacy `.doc` KEN source is intentionally ignored.
+2. `department_shift` is generated as `PROCESSING` and the loader marks it `VALID` after staff assignments load, so the vol2 shift procedures validate coverage.
+3. `emergency_visit` includes `referred_department_id` and the vol2 `status` field.
+4. `hospitalization_doctor` stores the doctor link only, matching vol2.
+5. `procedure_participant` stores the participant link only, matching vol2.
+6. `ken.csv` uses the improved/official KEN export when available; demo KEN rows are used only as a last-resort fallback.
 7. If the official EMA Article 57 workbook is not supplied, the generator falls back to a clearly marked **demo drug dataset** so Q7/Q10 can still be tested end-to-end.
+8. Procedure codes and names come from the official procedure catalog; vol2 keeps category and required place type in the loaded table.
 
 ## Name mapping logic
 
 - CSV file name == table name whenever possible.
 - Official source -> cleaned output:
   - `4.2 Κωδικοί ICD-10...xls` -> `data/reference/icd10_diagnosis.csv`
-  - KEN official `.doc` is skipped in this version -> synthetic `data/reference/ken.csv`
-  - ICD10-KEN official mapping is skipped in this version -> generated `data/reference/icd10_ken_map.csv`
+  - improved/official KEN export or official KEN `.doc` -> `data/reference/ken.csv`
+  - official ICD10-KEN workbook, filtered against `ken.csv` -> `data/reference/icd10_ken_map.csv`
   - `ΕΛΛΗΝΙΚΗ ΟΝΟΜΑΤΟΛΟΓΙΑ ... ΙΑΤΡΙΚΩΝ ΠΡΑΞΕΩΝ...xls` -> `data/reference/procedure_catalog.csv`
   - same procedure workbook -> derived `data/reference/lab_test_catalog.csv`
 
@@ -1478,6 +1874,12 @@ def main():
     parser.add_argument("--output-dir", default=str(default_root / "hospital_dataset_bundle"), help="Output bundle root.")
     parser.add_argument("--ema-xlsx", default=None, help="Optional EMA Article 57 workbook for official drug reference data.")
     parser.add_argument("--no-demo-drugs", action="store_true", help="Disable the fallback demo drug dataset if EMA is missing.")
+    parser.add_argument("--patient-count", type=int, default=500, help="Number of synthetic patients to generate.")
+    parser.add_argument("--emergency-count", type=int, default=1500, help="Number of synthetic emergency visits to generate.")
+    parser.add_argument("--hospitalization-count", type=int, default=1200, help="Target number of hospitalizations to generate.")
+    parser.add_argument("--lab-test-count", type=int, default=800, help="Target number of lab tests to generate.")
+    parser.add_argument("--procedure-count", type=int, default=500, help="Target number of procedure events to attempt.")
+    parser.add_argument("--prescription-count", type=int, default=1000, help="Target number of prescriptions to generate.")
     args = parser.parse_args()
 
     source_dir = Path(args.source_dir).expanduser().resolve()
@@ -1490,11 +1892,46 @@ def main():
 
     ref = load_reference_data(source_dir, ref_dir, ema_xlsx=Path(args.ema_xlsx) if args.ema_xlsx else None, allow_demo_drugs=not args.no_demo_drugs)
     org = build_people_and_org(gen_dir)
-    patients = build_patients(gen_dir)
+    patients = build_patients(gen_dir, count=args.patient_count)
     shifts = build_shifts(gen_dir, org)
-    emergencies = build_emergency_visits(gen_dir, patients, org)
-    clinical = build_clinical_events(gen_dir, ref, org, patients)
+    emergencies = build_emergency_visits(gen_dir, patients, org, count=args.emergency_count)
+    clinical = build_clinical_events(
+        gen_dir,
+        ref,
+        org,
+        patients,
+        hospitalization_count=args.hospitalization_count,
+        lab_test_count=args.lab_test_count,
+        procedure_event_count=args.procedure_count,
+        prescription_count=args.prescription_count,
+    )
+    validate_generated_bundle(ref, org, patients, clinical)
     write_load_sql(bundle_dir)
+    project_sql_dir = script_path.parents[1] / "sql"
+    for sql_name in ["install.sql", "schema.sql", "validation.sql"]:
+        source_sql = project_sql_dir / sql_name
+        target_sql = bundle_dir / "sql" / sql_name
+        if source_sql.exists() and source_sql.resolve() != target_sql.resolve():
+            shutil.copy2(source_sql, target_sql)
+    setup_parts = [
+        ("install.sql", bundle_dir / "sql" / "install.sql"),
+        ("load.sql", bundle_dir / "sql" / "load.sql"),
+        ("validation.sql", bundle_dir / "sql" / "validation.sql"),
+    ]
+    setup_lines = [
+        "-- Portable full setup script. Run from the project or generated bundle root:",
+        "-- mysql --local-infile=1 -u root -p < sql/setup.sql",
+        "--",
+        "-- The relative LOAD DATA paths in this file expect:",
+        "-- data/reference/*.csv",
+        "-- data/generated/*.csv",
+        "",
+    ]
+    for label, path in setup_parts:
+        setup_lines.append(f"-- === {label} ===")
+        setup_lines.append(path.read_text(encoding="utf-8").rstrip())
+        setup_lines.append("")
+    (bundle_dir / "sql" / "setup.sql").write_text("\n".join(setup_lines), encoding="utf-8")
     write_guides(bundle_dir, ref, {**org, **patients, **shifts, **emergencies, **clinical})
     target_script = bundle_dir / "scripts" / "generate_data.py"
     if script_path.resolve() != target_script.resolve():

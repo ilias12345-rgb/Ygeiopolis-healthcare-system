@@ -1,0 +1,151 @@
+Ygeiopolis Healthcare System - Improvements To Do 
+
+Ygeiopolis Healthcare System - Improvements To Do
+
+Team planning document for the final database submission. 
+
+The core schema is now strong: constraints, triggers, stored procedures, validation checks,
+portable setup scripts, and a larger data generator are in place. The remaining work is mostly
+final-submission packaging, query writing, evidence gathering, and report polishing.
+
+1. Highest Priority Before Submission
+
+Priority 
+Task 
+Why It Matters 
+Expected Output 
+
+P0 
+Create the final SQL query files for Q01 to Q15. 
+The assignment grades the query section heavily. Each query must return valid rows, otherwise it will not be graded. 
+sql/Q01.sql through sql/Q15.sql . 
+
+P0 
+Run every query against a freshly loaded database and save output files. 
+The deliverable explicitly asks for one output text file per query. 
+sql/Q01_out.txt through sql/Q15_out.txt . 
+
+P0 
+Prepare the Q4 and Q6 optimization evidence. 
+Q4 and Q6 require EXPLAIN or EXPLAIN ANALYZE, an alternative FORCE INDEX or hint version, cost/runtime comparison, and a short conclusion. 
+Report section with screenshots or copied plans, plus the two SQL variants. 
+
+P0 
+Confirm the official reference data story. 
+The brief says ICD-10, KEN, drugs, and medical procedure reference data should come from official sources, not invented names/codes. 
+A short table in the report listing official, cleaned, fallback, and synthetic data. 
+
+P0 
+Create final diagrams in the exact required format. 
+The final zip requires ER and relational diagrams as PDFs. 
+diagrams/er.pdf and diagrams/relational.pdf . 
+
+2. Query Work Plan
+
+Suggested split: one person owns correctness for Q1-Q5, one person Q6-Q10, one person Q11-Q15. Then everybody reviews the full set together.
+
+Query Group 
+Main Tables/Views 
+Notes 
+
+Q1 revenue by department/year/KEN/insurance 
+hospitalization , department , ken , patient 
+Split base KEN cost from extra charge caused by stay length above MDN. 
+
+Q2, Q5, Q11 doctor/procedure workload 
+doctor , personnel , doctor_department , shift_assignment , procedure_event 
+Use current-year filtering consistently. Explain any date assumption in README/report. 
+
+Q3, Q6, Q9 patient history and stay length 
+hospitalization , patient , department , icd10_diagnosis , hospitalization_evaluation 
+Use TIMESTAMPDIFF or equivalent day calculation consistently. 
+
+Q4 doctor evaluations 
+hospitalization_doctor , hospitalization_evaluation , doctor , personnel 
+Must include optimization comparison because Q4 has the special EXPLAIN requirement. 
+
+Q7 and Q10 drug/allergy/substance analysis 
+active_substance , patient_allergy , drug_active_substance , prescription , v_prescription_substances 
+For Q10, build pairs of active substances prescribed during the same hospitalization. 
+
+Q8 and Q12 shift coverage 
+v_shift_roster , v_shift_coverage , department_shift , staff subtype tables 
+Use the views to keep the final SQL readable. 
+
+Q13 supervision hierarchy 
+doctor , personnel 
+Use a recursive CTE to walk supervisor chains from direct supervisor to director. 
+
+Q14 ICD-10 categories over consecutive years 
+hospitalization , icd10_diagnosis 
+Group by the first three ICD-10 characters and compare adjacent years. 
+
+Q15 triage distribution 
+emergency_visit , department 
+Calculate waiting time, hospitalization percentage, and referral department distribution. 
+
+3. Data And Reproducibility Tasks
+
+Run the generator with the final selected size and keep the produced bundle stable until submission.
+
+Use the portable command mysql --local-infile=1 -u root -p < sql/setup.sql from the bundle root.
+
+Verify that sql/validation.sql returns zero rows for problem-detection queries.
+
+Save dataset_summary.json and mention the row counts in the report.
+
+If the EMA Article 57 file is not used, clearly mark the drug dataset as demo fallback in the assumptions/report.
+
+4. Report And Presentation Tasks
+
+Task 
+Recommended Owner 
+Output 
+
+Write schema design explanation and assumptions. 
+Database design owner 
+Report sections: ER model, relational model, assumptions. 
+
+Write SQL implementation explanation. 
+SQL implementation owner 
+Constraints, triggers, procedures, views, indexes. 
+
+Write data-generation explanation. 
+Data owner 
+Official sources, cleaning, synthetic data, reproducibility. 
+
+Prepare screenshots and query outputs. 
+Query owners 
+Q01-Q15 result evidence and Q4/Q6 EXPLAIN evidence. 
+
+Final proofread and zip structure check. 
+Whole team 
+Final package matching the assignment structure. 
+
+5. Nice-To-Have Improvements
+
+Add small negative trigger tests that intentionally fail inside transactions and then roll back.
+
+Add EXPLAIN notes for all important queries, not only Q4 and Q6.
+
+Prune any indexes that are not used by final queries after the query set is complete.
+
+Add final diagrams/ folder with clean PDF diagrams following the required names.
+
+Create a short demonstration script with the exact commands used during grading.
+
+6. Suggested Final Order Of Work
+
+Generate and load final data.
+
+Run validation and fix any returned problem rows.
+
+Write Q01-Q15.
+
+Save Q01-Q15 output files.
+
+Run Q4/Q6 EXPLAIN and FORCE INDEX variants.
+
+Finish diagrams and report.
+
+Check final folder names against the assignment PDF.
