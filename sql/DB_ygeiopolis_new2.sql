@@ -1247,6 +1247,61 @@ BEGIN
 
 END$$
 
+
+CREATE TRIGGER trg_bed_status_bi
+BEFORE INSERT ON hospitalization
+FOR EACH ROW
+BEGIN
+    DECLARE v_bed_status VARCHAR(20);
+
+    SELECT bed_status INTO v_bed_status
+    FROM bed
+    WHERE bed_id = NEW.bed_id;
+
+    IF v_bed_status != 'AVAILABLE' THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Bed is not available.';
+    ELSE
+        UPDATE bed
+        SET bed_status = 'OCCUPIED'
+        WHERE bed_id = NEW.bed_id;
+    END IF;
+
+END$$
+
+
+CREATE TRIGGER trg_bed_status_bu
+BEFORE UPDATE ON hospitalization
+FOR EACH ROW
+BEGIN
+    DECLARE v_bed_status VARCHAR(20);
+
+    IF NEW.bed_id != OLD.bed_id THEN
+
+        SELECT bed_status
+        INTO v_bed_status
+        FROM bed
+        WHERE bed_id = NEW.bed_id;
+
+        IF v_bed_status != 'AVAILABLE' THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Bed is not available.';
+
+        ELSE
+            UPDATE bed
+            SET bed_status = 'OCCUPIED'
+            WHERE bed_id = NEW.bed_id;
+
+            UPDATE bed
+            SET bed_status = 'AVAILABLE'
+            WHERE bed_id = OLD.bed_id;
+
+        END IF;
+
+    END IF;
+
+END$$
+
 CREATE PROCEDURE shift_composition(IN shiftID BIGINT)
 BEGIN
     DECLARE doc_cnt        INT;
