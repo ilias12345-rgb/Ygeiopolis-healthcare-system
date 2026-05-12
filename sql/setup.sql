@@ -1340,11 +1340,6 @@ END$$
 
 DELIMITER ;
 
-
-
-
-
-
 -- === load.sql ===
 -- Robust generated loader. Run from the bundle/project root.
 -- Example: mysql --local-infile=1 -u root -p < sql/load.sql

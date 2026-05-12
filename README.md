@@ -29,47 +29,77 @@ The database models hospital departments, staff, shifts, emergency triage, patie
 └── README.md
 ```
 
-## How To Run
+## How To Run On A New Laptop
 
-### Prerequisites
+The recommended run path is to generate a portable bundle and execute the database setup from inside that bundle. This avoids absolute paths and lets the same commands work on another machine.
 
-- MySQL or MariaDB installed and running.
-- `LOCAL INFILE` enabled in the MySQL client/server, because the loader uses `LOAD DATA LOCAL INFILE`.
-- Python 3 with the packages listed in `requirements.txt`.
-- Official source files from the assignment available in a local folder.
+### 1. Install Requirements
 
-Install Python dependencies if needed:
+Install the following before running the project:
+
+- Python 3
+- MySQL or MariaDB
+- Git, if the project is cloned from GitHub
+
+On macOS with Homebrew, a typical setup is:
+
+```bash
+brew install python mysql git
+brew services start mysql
+```
+
+On Windows or Linux, install Python 3 and MySQL/MariaDB using the normal installer/package manager for that system, then make sure the `python3`, `pip`, and `mysql` commands are available from the terminal.
+
+On Windows, the Python command may be `py -3` instead of `python3`. If so, use `py -3` in the Python commands below.
+
+### 2. Get The Project
+
+Clone the repository, then enter the project folder:
+
+```bash
+git clone https://github.com/ilias12345-rgb/Ygeiopolis-healthcare-system.git
+cd Ygeiopolis-healthcare-system
+```
+
+If the project was shared as a ZIP file instead, extract it and open a terminal inside the extracted `Ygeiopolis-healthcare-system` folder.
+
+### 3. Install Python Packages
+
+From the project root:
 
 ```bash
 python3 -m pip install -r requirements.txt
 ```
 
-If MySQL is installed but not running, start it first. On a Homebrew macOS setup this is usually:
+Windows alternative:
 
-```bash
-brew services start mysql
+```powershell
+py -3 -m pip install -r requirements.txt
 ```
 
-The project has two supported ways to run:
+The generator uses these packages to read the official Excel/Word source files and produce CSV data.
 
-1. Generate a portable data bundle, then run it from the bundle folder.
-2. Generate/copy `data/reference` and `data/generated` into this repository, then run from the project folder.
+### 4. Add The Official Source Files
 
-For a clean run on another laptop, use the first option.
-
-### 1. Prepare Source Files
-
-Create a folder named `data_sources` and place the official source files from the assignment there, for example ICD-10, KEN, ICD10-KEN mapping, medical procedure catalog, and optionally the EMA Article 57 workbook.
+Create a folder named `data_sources` in the project root:
 
 ```bash
 mkdir -p data_sources
 ```
 
-If the files are somewhere else, pass that folder to `--source-dir` instead of `data_sources`.
+Place the official assignment files in that folder, for example:
 
-### 2. Generate A Portable Data Bundle
+- ICD-10 diagnosis file
+- KEN file
+- ICD-10 to KEN mapping file
+- medical procedure catalog
+- optional EMA Article 57 drug workbook
 
-From the repository root:
+If the official files are stored somewhere else, keep them there and pass that path to `--source-dir` in the next step.
+
+### 5. Generate The Portable Data Bundle
+
+From the project root, run:
 
 ```bash
 python3 scripts/generate_data.py \
@@ -77,7 +107,15 @@ python3 scripts/generate_data.py \
   --output-dir hospital_dataset_bundle
 ```
 
-This creates a self-contained folder named `hospital_dataset_bundle` with:
+Windows PowerShell alternative:
+
+```powershell
+py -3 scripts/generate_data.py `
+  --source-dir data_sources `
+  --output-dir hospital_dataset_bundle
+```
+
+This creates `hospital_dataset_bundle`, which contains everything needed for loading:
 
 - `data/reference/*.csv`
 - `data/generated/*.csv`
@@ -86,28 +124,55 @@ This creates a self-contained folder named `hospital_dataset_bundle` with:
 - `sql/load.sql`
 - `sql/setup.sql`
 - `sql/validation.sql`
-- dataset metadata files
+- metadata files such as `dataset_summary.json`, `TABLE_TO_CSV_MAP.csv`, and `QUERY_COVERAGE.csv`
 
-### 3. Load Everything Into MySQL
+If the official files are not in `data_sources`, use:
 
-From inside the generated bundle root:
+```bash
+python3 scripts/generate_data.py \
+  --source-dir /path/to/official/files \
+  --output-dir hospital_dataset_bundle
+```
+
+Windows paths also work. Example:
+
+```powershell
+py -3 scripts/generate_data.py `
+  --source-dir C:\path\to\official\files `
+  --output-dir hospital_dataset_bundle
+```
+
+### 6. Load The Database
+
+Move into the generated bundle:
 
 ```bash
 cd hospital_dataset_bundle
+```
+
+Then run the full setup:
+
+```bash
 mysql --local-infile=1 -u root -p < sql/setup.sql
 ```
 
-`setup.sql` runs the schema installer, loads all generated CSVs, and then runs validation.
-
-If MySQL rejects `LOAD DATA LOCAL INFILE`, enable it for the session/client and retry:
+Enter the MySQL password when asked. If the local MySQL user has no password, use:
 
 ```bash
-mysql --local-infile=1 -u root -p
+mysql --local-infile=1 -u root < sql/setup.sql
 ```
 
-In MySQL Workbench, enable `OPT_LOCAL_INFILE` / `local_infile` before running the setup script.
+The `setup.sql` script does three things:
 
-### Manual Alternative
+1. creates the `yg_eupolis_hospital` database;
+2. loads all generated CSV data with relative paths;
+3. runs validation queries.
+
+The first output should show row counts for the main tables. The validation queries after that should return zero rows.
+
+### 7. Run The Scripts Manually If Needed
+
+The full setup is the easiest option, but the same process can be run in three separate steps from inside `hospital_dataset_bundle`:
 
 ```bash
 mysql -u root -p < sql/install.sql
@@ -115,15 +180,32 @@ mysql --local-infile=1 -u root -p < sql/load.sql
 mysql -u root -p yg_eupolis_hospital < sql/validation.sql
 ```
 
+### 8. MySQL Workbench Option
+
+If using MySQL Workbench:
+
+1. Enable `local_infile` / `OPT_LOCAL_INFILE` for the connection.
+2. Open `hospital_dataset_bundle/sql/setup.sql`.
+3. Make sure the working directory is the generated bundle root, because `LOAD DATA LOCAL INFILE` uses relative paths such as `data/generated/patient.csv`.
+4. Run the script.
+
+Running from terminal is recommended because relative file paths are more predictable.
+
+### Troubleshooting
+
+- If `LOAD DATA LOCAL INFILE` is rejected, reconnect with `mysql --local-infile=1` and make sure the MySQL server allows local infile loading.
+- If a CSV file is reported as missing, confirm that the command is being run from inside `hospital_dataset_bundle`, not from another folder.
+- If `python3` cannot import a package, rerun `python3 -m pip install -r requirements.txt`.
+- If MySQL cannot connect, start the MySQL/MariaDB service and confirm the username/password.
+- If official source files have different names, keep them in one folder and pass that folder through `--source-dir`; the generator searches for the known assignment files recursively.
+
 ### Running From This Repository Instead
 
-If you copy or generate the CSV folders directly into this repository as `data/reference` and `data/generated`, run from the repository root:
+The repository itself does not store generated CSV data by default. If `data/reference` and `data/generated` are copied into the project root, the same full setup can also be run from the repository root:
 
 ```bash
 mysql --local-infile=1 -u root -p < sql/setup.sql
 ```
-
-The repository does not store generated CSV data by default because the bundle can be large and may contain regenerated reference extracts.
 
 ## Main SQL Logic
 
@@ -226,7 +308,3 @@ The assignment PDF asks for the following final structure:
 - optional `code/` folder if an application is submitted
 
 Current repository note: the portable install/load/setup scripts and validation logic are present, but the final per-query SQL/output files and the Q4/Q6 report material still need to be prepared for the exact submission format.
-
-## AI Assistance Note
-
-OpenAI Codex was used as an assistant for schema review, SQL hardening, validation-script expansion, and README cleanup. The project design, final verification, and submitted results should be reviewed by the team before delivery.
