@@ -1,0 +1,218 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+import subprocess
+from typing import Optional
+
+import mysql.connector
+import pandas as pd
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+SQL_DIR = PROJECT_ROOT / "sql"
+DEFAULT_DATABASE = "yg_eupolis_hospital"
+SOCKET_CANDIDATES = (
+    "/tmp/mysql.sock",
+    "/var/run/mysqld/mysqld.sock",
+    "/opt/homebrew/var/mysql/mysql.sock",
+)
+
+
+@dataclass(frozen=True)
+class DbConfig:
+    host: str = "localhost"
+    port: int = 3306
+    user: str = "root"
+    password: str = ""
+    database: str = DEFAULT_DATABASE
+    unix_socket: str = ""
+
+
+@dataclass(frozen=True)
+class QueryFile:
+    number: int
+    name: str
+    path: Path
+    output_path: Path
+
+
+@dataclass
+class SqlResult:
+    dataframe: Optional[pd.DataFrame] = None
+    affected_rows: Optional[int] = None
+    message: str = ""
+
+
+def query_files() -> list[QueryFile]:
+    files = []
+    for number in range(1, 16):
+        name = f"Q{number:02d}.sql"
+        files.append(
+            QueryFile(
+                number=number,
+                name=name,
+                path=SQL_DIR / name,
+                output_path=SQL_DIR / f"Q{number:02d}_out.txt",
+            )
+        )
+    return files
+
+
+def get_query_file(name: str) -> QueryFile:
+    for query_file in query_files():
+        if query_file.name == name:
+            return query_file
+    raise ValueError(f"Unknown query file: {name}")
+
+
+def read_query(query_file: QueryFile) -> str:
+    if not query_file.path.exists():
+        return ""
+    return query_file.path.read_text(encoding="utf-8")
+
+
+def save_query(query_file: QueryFile, sql_text: str) -> None:
+    query_file.path.parent.mkdir(parents=True, exist_ok=True)
+    query_file.path.write_text(sql_text, encoding="utf-8")
+
+
+def first_sql_keyword(sql_text: str) -> str:
+    in_block_comment = False
+    for raw_line in sql_text.strip().splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if in_block_comment:
+            if "*/" in line:
+                in_block_comment = False
+                line = line.split("*/", 1)[1].strip()
+            else:
+                continue
+        if line.startswith("/*"):
+            if "*/" in line:
+                line = line.split("*/", 1)[1].strip()
+            else:
+                in_block_comment = True
+                continue
+        if line.startswith("--") or line.startswith("#"):
+            continue
+        return line.split(None, 1)[0].rstrip(";").lower()
+    return ""
+
+
+def is_read_query(sql_text: str) -> bool:
+    return first_sql_keyword(sql_text) in {"select", "with", "show", "describe", "desc", "explain"}
+
+
+def mysql_cli_args(config: DbConfig, include_database: bool = False) -> list[str]:
+    args = [
+        "mysql",
+        "--local-infile=1",
+        "-h",
+        config.host,
+        "-P",
+        str(config.port),
+        "-u",
+        config.user,
+    ]
+    if config.password:
+        args.append(f"-p{config.password}")
+    if config.unix_socket:
+        args.extend(["--socket", config.unix_socket])
+    if include_database:
+        args.append(config.database)
+    return args
+
+
+def run_mysql_script(script_path: Path, working_dir: Path, config: DbConfig) -> subprocess.CompletedProcess[str]:
+    with script_path.open("r", encoding="utf-8") as script:
+        return subprocess.run(
+            mysql_cli_args(config),
+            stdin=script,
+            cwd=working_dir,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+
+def connect(config: DbConfig):
+    connection_args = {
+        "host": config.host,
+        "port": config.port,
+        "user": config.user,
+        "password": config.password,
+        "database": config.database,
+        "allow_local_infile": True,
+    }
+    if config.unix_socket:
+        connection_args["unix_socket"] = config.unix_socket
+    return mysql.connector.connect(
+        **connection_args,
+    )
+
+
+def test_connection(config: DbConfig) -> str:
+    conn = connect(config)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT DATABASE(), VERSION()")
+        database_name, version = cursor.fetchone()
+        return f"Connected to {database_name} on MySQL/MariaDB {version}"
+    finally:
+        conn.close()
+
+
+def split_sql_statements(sql_text: str) -> list[str]:
+    return [statement.strip() for statement in sql_text.split(";") if statement.strip()]
+
+
+def execute_sql(sql_text: str, config: DbConfig) -> SqlResult:
+    sql_clean = sql_text.strip()
+    if not sql_clean:
+        raise ValueError("The SQL editor is empty.")
+
+    conn = connect(config)
+    try:
+        if is_read_query(sql_clean):
+            cursor = conn.cursor(dictionary=True)
+            try:
+                cursor.execute(sql_clean)
+                rows = cursor.fetchall()
+            finally:
+                cursor.close()
+            dataframe = pd.DataFrame(rows)
+            return SqlResult(dataframe=dataframe, message=f"{len(dataframe)} rows returned.")
+
+        cursor = conn.cursor()
+        try:
+            affected_rows = 0
+            for statement in split_sql_statements(sql_clean):
+                cursor.execute(statement)
+                affected_rows += max(cursor.rowcount, 0)
+            conn.commit()
+        finally:
+            cursor.close()
+        return SqlResult(affected_rows=affected_rows, message=f"Affected rows: {affected_rows}")
+    finally:
+        conn.close()
+
+
+def format_result_for_text(result: SqlResult) -> str:
+    if result.dataframe is not None:
+        if result.dataframe.empty:
+            return "Query returned zero rows.\n"
+        return result.dataframe.to_string(index=False) + "\n"
+    return result.message + "\n"
+
+
+def save_query_output(query_file: QueryFile, result: SqlResult) -> None:
+    query_file.output_path.write_text(format_result_for_text(result), encoding="utf-8")
+
+
+def detect_unix_socket() -> str:
+    for candidate in SOCKET_CANDIDATES:
+        if Path(candidate).exists():
+            return candidate
+    return ""

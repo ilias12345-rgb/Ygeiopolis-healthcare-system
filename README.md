@@ -16,6 +16,12 @@ The database models hospital departments, staff, shifts, emergency triage, patie
 ├── scripts/
 │   ├── generate_data.py
 │   └── README.md
+├── app.py
+├── ui.py
+├── queries.py
+├── streamlit_app.py
+├── .streamlit/
+│   └── config.toml
 ├── sql/
 │   ├── install.sql
 │   ├── schema.sql
@@ -24,7 +30,6 @@ The database models hospital departments, staff, shifts, emergency triage, patie
 │   ├── validation.sql
 │   ├── Q01.sql ... Q15.sql
 │   └── README.md
-├── streamlit_app.py
 └── README.md
 ```
 
@@ -206,21 +211,37 @@ The repository itself does not store generated CSV data by default. If `data/ref
 mysql --local-infile=1 -u root -p < sql/setup.sql
 ```
 
-## Optional Streamlit UI
+## Optional Streamlit App
 
-A small Streamlit helper is included for local demonstrations. It can run `sql/setup.sql`, edit/save the `Q01.sql` to `Q15.sql` query files, and execute queries against the loaded MySQL database.
+A Streamlit application is included for local demonstrations. It opens with an operations dashboard for beds, admissions, shifts, emergency visits, procedures, and monitoring counts. It can also run `sql/setup.sql`, edit/save the `Q01.sql` to `Q15.sql` query files, execute queries against the loaded MySQL database, and save query outputs.
+
+Application files:
+
+- `app.py`: Streamlit entrypoint.
+- `ui.py`: page layout and Streamlit controls.
+- `queries.py`: query-file handling, MySQL connection, setup execution, and output saving.
+- `streamlit_app.py`: compatibility wrapper that calls `app.py`.
+- `.streamlit/config.toml`: application theme.
 
 Install requirements first, then run:
 
 ```bash
-streamlit run streamlit_app.py
+streamlit run app.py
+```
+
+If the `streamlit` command is not available in the terminal:
+
+```bash
+python3 -m streamlit run app.py
 ```
 
 Windows alternative:
 
 ```powershell
-py -3 -m streamlit run streamlit_app.py
+py -3 -m streamlit run app.py
 ```
+
+On macOS/Linux, the app auto-fills a common Unix socket path such as `/tmp/mysql.sock` when it exists. On Windows, leave the Unix socket field empty and use the normal host/port connection.
 
 The Streamlit app is optional. The database can always be installed and queried directly from the terminal using the SQL scripts above.
 
@@ -322,6 +343,6 @@ The assignment PDF asks for the following final structure:
 - `sql/Q01.sql` through `sql/Q15.sql`
 - `sql/Q01_out.txt` through `sql/Q15_out.txt`
 - `docs/report.pdf`, including the required EXPLAIN / FORCE INDEX comparison for Q4 and Q6
-- optional `streamlit_app.py` if an application/demo UI is submitted
+- optional `app.py`, `ui.py`, and `queries.py` if an application/demo UI is submitted
 
 Current repository note: the portable install/load/setup scripts and validation logic are present, but the final per-query SQL/output files and the Q4/Q6 report material still need to be prepared for the exact submission format.
