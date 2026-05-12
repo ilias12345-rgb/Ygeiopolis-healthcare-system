@@ -582,6 +582,30 @@ CREATE INDEX idx_evaluation_date /*??*/
 CREATE INDEX idx_evaluation_evaluation /*Q4 Για να βρούμε τις αξιολογήσεις των ασθενών για συγκεκριμένο ιατρό μέσω της νοσηλείας*/
     ON hospitalization_evaluation (hosp_id);
 
+/* Views*/
+CREATE VIEW patient_history AS
+SELECT 
+    p.patient_amka, p.first_name, p.last_name, p.insurance_provider,
+    h.hosp_id, h.department_id, h.admission_ts, h.discharge_ts, h.total_cost,
+    d.department_name, id.icd10_code, id.icd10_description,
+    k.ken_code, k.ken_description
+FROM patient p
+JOIN hospitalization h ON p.patient_amka = h.patient_amka
+JOIN department d ON h.department_id = d.department_id
+JOIN icd10_diagnosis id ON h.admission_icd10_code = id.icd10_code
+JOIN ken k ON h.ken_code = k.ken_code;
+
+
+CREATE VIEW prescription_substances AS
+SELECT
+    pr.prescription_id, pr.hosp_id, pr.patient_amka, pr.doctor_amka,
+    pr.drug_id, dr.drug_name, pr.start_datetime, pr.end_datetime,
+    a.substance_id, a.substance_name
+FROM prescription pr
+JOIN drug dr ON pr.drug_id = dr.drug_id
+JOIN drug_active_substance das ON dr.drug_id = das.drug_id
+JOIN active_substance a ON das.substance_id = a.substance_id;
+
 
 /* Triggers for key business rules */
 
