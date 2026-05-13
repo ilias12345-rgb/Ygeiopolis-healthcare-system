@@ -1,0 +1,16 @@
+department_id,department_name,description,bed_capacity,floor_building,manager_doctor_amka
+1,Cardiology,Cardiology department of Ygeiopolis General Hospital,22,1/Building A,10000000000
+2,Surgery,Surgery department of Ygeiopolis General Hospital,26,2/Building A,10000000009
+3,ICU,ICU department of Ygeiopolis General Hospital,30,3/Building A,10000000018
+4,Emergency,Emergency department of Ygeiopolis General Hospital,34,1/Building B,10000000027
+5,Neurology,Neurology department of Ygeiopolis General Hospital,18,2/Building B,10000000036
+6,Orthopedics,Orthopedics department of Ygeiopolis General Hospital,22,3/Building B,10000000045
+7,Pulmonology,Pulmonology department of Ygeiopolis General Hospital,26,B1/Building A,10000000054
+8,Gastroenterology,Gastroenterology department of Ygeiopolis General Hospital,30,1/Building A,10000000063
+9,Oncology,Oncology department of Ygeiopolis General Hospital,34,2/Building A,10000000072
+10,Pediatrics,Pediatrics department of Ygeiopolis General Hospital,18,3/Building A,10000000081
+11,Ophthalmology,Ophthalmology department of Ygeiopolis General Hospital,22,1/Building B,10000000090
+12,ENT,ENT department of Ygeiopolis General Hospital,26,2/Building B,10000000099
+13,Nephrology,Nephrology department of Ygeiopolis General Hospital,30,3/Building B,10000000108
+14,Psychiatry,Psychiatry department of Ygeiopolis General Hospital,34,B1/Building A,10000000117
+15,Internal Medicine,Internal Medicine department of Ygeiopolis General Hospital,18,1/Building A,10000000126

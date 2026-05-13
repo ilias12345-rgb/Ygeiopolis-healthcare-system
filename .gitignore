@@ -1,6 +1,5 @@
 # Generated data bundles
 hospital_dataset_bundle/
-data/
 DATASET_GUIDE.md
 QUERY_COVERAGE.csv
 TABLE_TO_CSV_MAP.csv

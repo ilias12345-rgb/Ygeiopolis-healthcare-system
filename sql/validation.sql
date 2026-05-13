@@ -21,10 +21,38 @@ UNION ALL SELECT 'lab_test', COUNT(*) FROM lab_test
 UNION ALL SELECT 'procedure_catalog', COUNT(*) FROM procedure_catalog
 UNION ALL SELECT 'procedure_event', COUNT(*) FROM procedure_event
 UNION ALL SELECT 'procedure_participant', COUNT(*) FROM procedure_participant
+UNION ALL SELECT 'drug', COUNT(*) FROM drug
+UNION ALL SELECT 'active_substance', COUNT(*) FROM active_substance
+UNION ALL SELECT 'drug_active_substance', COUNT(*) FROM drug_active_substance
+UNION ALL SELECT 'patient_allergy', COUNT(*) FROM patient_allergy
 UNION ALL SELECT 'prescription', COUNT(*) FROM prescription
 UNION ALL SELECT 'hospitalization_evaluation', COUNT(*) FROM hospitalization_evaluation;
 
 -- The following checks should return zero rows.
+
+-- Hospitalizations should reference an existing patient.
+SELECT h.hosp_id, h.patient_amka
+FROM hospitalization h
+LEFT JOIN patient p ON p.patient_amka = h.patient_amka
+WHERE p.patient_amka IS NULL;
+
+-- Hospitalizations should reference an existing department.
+SELECT h.hosp_id, h.department_id
+FROM hospitalization h
+LEFT JOIN department d ON d.department_id = h.department_id
+WHERE d.department_id IS NULL;
+
+-- Hospitalizations should reference an existing KEN code.
+SELECT h.hosp_id, h.ken_code
+FROM hospitalization h
+LEFT JOIN ken k ON k.ken_code = h.ken_code
+WHERE k.ken_code IS NULL;
+
+-- Hospitalizations should reference an existing ICD-10 admission diagnosis.
+SELECT h.hosp_id, h.admission_icd10_code
+FROM hospitalization h
+LEFT JOIN icd10_diagnosis icd ON icd.icd10_code = h.admission_icd10_code
+WHERE icd.icd10_code IS NULL;
 
 -- Hospitalizations should have at least one assigned doctor.
 SELECT h.hosp_id
@@ -96,6 +124,12 @@ WHERE p.start_datetime < h.admission_ts
    OR (p.end_datetime IS NOT NULL AND p.end_datetime < h.admission_ts)
    OR (p.end_datetime IS NOT NULL AND h.discharge_ts IS NOT NULL AND p.end_datetime > h.discharge_ts);
 
+-- Prescriptions should reference existing drugs.
+SELECT p.prescription_id, p.drug_id
+FROM prescription p
+LEFT JOIN drug d ON d.drug_id = p.drug_id
+WHERE d.drug_id IS NULL;
+
 -- Procedure rooms should not have overlapping events.
 SELECT a.procedure_event_id AS event_a,
        b.procedure_event_id AS event_b,
@@ -114,11 +148,48 @@ JOIN hospitalization h ON h.hosp_id = pe.hosp_id
 WHERE pe.start_ts < h.admission_ts
    OR (h.discharge_ts IS NOT NULL AND pe.end_ts > h.discharge_ts);
 
+-- Procedure event place type must match the procedure catalog requirement.
+SELECT pe.procedure_event_id,
+       pc.required_place_type,
+       op.place_type
+FROM procedure_event pe
+JOIN procedure_catalog pc ON pc.procedure_code = pe.procedure_code
+JOIN operating_place op ON op.place_id = pe.place_id
+WHERE pc.required_place_type <> op.place_type;
+
 -- Procedure catalog rows should include valid category and place data.
 SELECT procedure_code, procedure_category, required_place_type
 FROM procedure_catalog
 WHERE procedure_category NOT IN ('SURGICAL', 'DIAGNOSTIC', 'THERAPEUTIC')
    OR required_place_type NOT IN ('OPERATING_ROOM', 'PROCEDURE_ROOM');
+
+-- The same doctor should not be involved in overlapping procedures, either as
+-- chief surgeon or listed participant.
+SELECT a.procedure_event_id AS event_a,
+       b.procedure_event_id AS event_b,
+       a.doctor_amka
+FROM (
+    SELECT procedure_event_id, chief_surgeon_amka AS doctor_amka, start_ts, end_ts
+    FROM procedure_event
+    UNION
+    SELECT pe.procedure_event_id, pp.personnel_amka AS doctor_amka, pe.start_ts, pe.end_ts
+    FROM procedure_participant pp
+    JOIN procedure_event pe ON pe.procedure_event_id = pp.procedure_event_id
+    JOIN doctor d ON d.amka = pp.personnel_amka
+) a
+JOIN (
+    SELECT procedure_event_id, chief_surgeon_amka AS doctor_amka, start_ts, end_ts
+    FROM procedure_event
+    UNION
+    SELECT pe.procedure_event_id, pp.personnel_amka AS doctor_amka, pe.start_ts, pe.end_ts
+    FROM procedure_participant pp
+    JOIN procedure_event pe ON pe.procedure_event_id = pp.procedure_event_id
+    JOIN doctor d ON d.amka = pp.personnel_amka
+) b
+  ON a.doctor_amka = b.doctor_amka
+ AND a.procedure_event_id < b.procedure_event_id
+ AND a.start_ts < b.end_ts
+ AND a.end_ts > b.start_ts;
 
 -- Department shifts should meet the required staffing coverage.
 SELECT ds.shift_id,

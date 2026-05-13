@@ -1,0 +1,1 @@
+prescription_id,hosp_id,patient_amka,doctor_amka,drug_id,dosage,frequency,start_datetime,end_datetime

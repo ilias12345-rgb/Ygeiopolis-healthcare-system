@@ -1,0 +1,2 @@
+-- TODO: Add final SQL answer for Q06.
+-- After the database is loaded, run this query and save the result in sql/Q06_out.txt.

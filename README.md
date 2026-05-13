@@ -13,6 +13,9 @@ The database models hospital departments, staff, shifts, emergency triage, patie
 │   └── schema.pdf
 ├── docs/
 │   └── exercise-brief-2025-2026.pdf
+├── data/
+│   ├── reference/
+│   └── generated/
 ├── scripts/
 │   ├── generate_data.py
 │   └── README.md
@@ -27,47 +30,48 @@ The database models hospital departments, staff, shifts, emergency triage, patie
 │   ├── load.sql
 │   ├── validation.sql
 │   ├── Q01.sql ... Q15.sql
+│   ├── Q01_out.txt ... Q15_out.txt
 │   └── README.md
 └── README.md
 ```
 
-## How To Run On A New Laptop
+## Recommended Final Run
 
-The recommended run path is to generate a portable bundle and execute the database setup from inside that bundle. This avoids absolute paths and lets the same commands work on another machine.
+The recommended grading path uses the CSV files already included in this repository. The grader should not need to run `scripts/generate_data.py`.
 
-### 1. Install Requirements
-
-Install the following before running the project:
-
-- Python 3
-- MySQL or MariaDB
-- Git, if the project is cloned from GitHub
-
-On macOS with Homebrew, a typical setup is:
-
-```bash
-brew install python mysql git
-brew services start mysql
-```
-
-On Windows or Linux, install Python 3 and MySQL/MariaDB using the normal installer/package manager for that system, then make sure the `python3`, `pip`, and `mysql` commands are available from the terminal.
-
-On Windows, the Python command may be `py -3` instead of `python3`. If so, use `py -3` in the Python commands below.
-
-### 2. Get The Project
-
-Clone the repository, then enter the project folder:
+Install MySQL/MariaDB first, then clone or download the repository and run the following commands from the repository root:
 
 ```bash
 git clone https://github.com/ilias12345-rgb/Ygeiopolis-healthcare-system.git
 cd Ygeiopolis-healthcare-system
+mysql -u root -p -e "SET GLOBAL local_infile = 1;"
+mysql -u root -p -e "SHOW GLOBAL VARIABLES LIKE 'local_infile';"
+mysql -u root -p < sql/install.sql
+mysql --local-infile=1 -u root -p < sql/load.sql
+mysql -u root -p < sql/validation.sql
 ```
 
-If the project was shared as a ZIP file instead, extract it and open a terminal inside the extracted `Ygeiopolis-healthcare-system` folder.
+If the local MySQL user has no password, omit `-p`:
 
-### 3. Install Python Packages
+```bash
+mysql -u root -e "SET GLOBAL local_infile = 1;"
+mysql -u root -e "SHOW GLOBAL VARIABLES LIKE 'local_infile';"
+mysql -u root < sql/install.sql
+mysql --local-infile=1 -u root < sql/load.sql
+mysql -u root < sql/validation.sql
+```
 
-From the project root:
+The scripts do three things:
+
+1. `install.sql` creates the `yg_eupolis_hospital` database and all schema objects.
+2. `load.sql` loads the included CSV data from relative paths under `data/reference` and `data/generated`.
+3. `validation.sql` prints row counts and runs problem-detection queries. The problem-detection queries should return zero rows.
+
+## Optional Regeneration
+
+The generator is kept for repeatable testing and for rebuilding the data from official source files. This is optional for grading because the final repository includes generated CSVs.
+
+Install Python dependencies:
 
 ```bash
 python3 -m pip install -r requirements.txt
@@ -79,29 +83,7 @@ Windows alternative:
 py -3 -m pip install -r requirements.txt
 ```
 
-The generator uses these packages to read the official Excel/Word source files and produce CSV data.
-
-### 4. Add The Official Source Files
-
-Create a folder named `data_sources` in the project root:
-
-```bash
-mkdir -p data_sources
-```
-
-Place the official assignment files in that folder, for example:
-
-- ICD-10 diagnosis file
-- KEN file
-- ICD-10 to KEN mapping file
-- medical procedure catalog
-- optional EMA Article 57 drug workbook
-
-If the official files are stored somewhere else, keep them there and pass that path to `--source-dir` in the next step.
-
-### 5. Generate The Portable Data Bundle
-
-From the project root, run:
+Place official source files in `data_sources`, then generate a portable bundle:
 
 ```bash
 python3 scripts/generate_data.py \
@@ -117,102 +99,7 @@ py -3 scripts/generate_data.py `
   --output-dir hospital_dataset_bundle
 ```
 
-This creates `hospital_dataset_bundle`, which contains everything needed for loading:
-
-- `data/reference/*.csv`
-- `data/generated/*.csv`
-- `sql/install.sql`
-- `sql/load.sql`
-- `sql/validation.sql`
-- metadata files such as `dataset_summary.json`, `TABLE_TO_CSV_MAP.csv`, and `QUERY_COVERAGE.csv`
-
-If the official files are not in `data_sources`, use:
-
-```bash
-python3 scripts/generate_data.py \
-  --source-dir /path/to/official/files \
-  --output-dir hospital_dataset_bundle
-```
-
-Windows paths also work. Example:
-
-```powershell
-py -3 scripts/generate_data.py `
-  --source-dir C:\path\to\official\files `
-  --output-dir hospital_dataset_bundle
-```
-
-### 6. Load The Database
-
-Move into the generated bundle:
-
-```bash
-cd hospital_dataset_bundle
-```
-
-Then run the schema install, data load, and validation:
-
-```bash
-mysql -u root -p < sql/install.sql
-mysql --local-infile=1 -u root -p < sql/load.sql
-mysql -u root -p < sql/validation.sql
-```
-
-Enter the MySQL password when asked. If the local MySQL user has no password, use:
-
-```bash
-mysql -u root < sql/install.sql
-mysql --local-infile=1 -u root < sql/load.sql
-mysql -u root < sql/validation.sql
-```
-
-The scripts do three things:
-
-1. `install.sql` creates the `yg_eupolis_hospital` database and all schema objects;
-2. `load.sql` loads all generated CSV data with relative paths;
-3. `validation.sql` prints row counts and runs post-load validation queries.
-
-The first output should show row counts for the main tables. The validation queries after that should return zero rows.
-
-### 7. Run The Scripts Manually If Needed
-
-The same process can be run again in three separate steps from inside `hospital_dataset_bundle`:
-
-```bash
-mysql -u root -p < sql/install.sql
-mysql --local-infile=1 -u root -p < sql/load.sql
-mysql -u root -p yg_eupolis_hospital < sql/validation.sql
-```
-
-### 8. MySQL Workbench Option
-
-If using MySQL Workbench:
-
-1. Enable `local_infile` / `OPT_LOCAL_INFILE` for the connection.
-2. Open and run `hospital_dataset_bundle/sql/install.sql`.
-3. Open and run `hospital_dataset_bundle/sql/load.sql`.
-4. Open and run `hospital_dataset_bundle/sql/validation.sql`.
-5. Make sure the working directory is the generated bundle root when running `load.sql`, because `LOAD DATA LOCAL INFILE` uses relative paths such as `data/generated/patient.csv`.
-
-Running from terminal is recommended because relative file paths are more predictable.
-
-### Troubleshooting
-
-- If `LOAD DATA LOCAL INFILE` is rejected, reconnect with `mysql --local-infile=1` and make sure the MySQL server allows local infile loading.
-- If a CSV file is reported as missing, confirm that the command is being run from inside `hospital_dataset_bundle`, not from another folder.
-- If `python3` cannot import a package, rerun `python3 -m pip install -r requirements.txt`.
-- If MySQL cannot connect, start the MySQL/MariaDB service and confirm the username/password.
-- If official source files have different names, keep them in one folder and pass that folder through `--source-dir`; the generator searches for the known assignment files recursively.
-
-### Running From This Repository Instead
-
-The repository itself does not store generated CSV data by default. If `data/reference` and `data/generated` are copied into the project root, the same install/load/validation flow can also be run from the repository root:
-
-```bash
-mysql -u root -p < sql/install.sql
-mysql --local-infile=1 -u root -p < sql/load.sql
-mysql -u root -p < sql/validation.sql
-```
+The generated bundle contains `data/reference`, `data/generated`, `sql/install.sql`, `sql/load.sql`, `sql/validation.sql`, `dataset_summary.json`, `TABLE_TO_CSV_MAP.csv`, and `QUERY_COVERAGE.csv`. The generator writes to the directory passed with `--output-dir`; it should not be used to overwrite unrelated project files.
 
 ## Optional Streamlit App
 
@@ -247,6 +134,17 @@ py -3 -m streamlit run app.py
 On macOS/Linux, the app auto-fills a common Unix socket path such as `/tmp/mysql.sock` when it exists. On Windows, leave the Unix socket field empty and use the normal host/port connection.
 
 The Streamlit app is optional. The database can always be installed and queried directly from the terminal using the SQL scripts above.
+
+## Troubleshooting Local Infile
+
+- If `LOAD DATA LOCAL INFILE` is rejected, run `mysql -u root -p -e "SET GLOBAL local_infile = 1;"` and reconnect with `mysql --local-infile=1`.
+- Confirm the setting with `mysql -u root -p -e "SHOW GLOBAL VARIABLES LIKE 'local_infile';"`.
+- If a CSV file is reported as missing, confirm that the command is being run from the repository root.
+- `load.sql` intentionally uses relative paths such as `data/reference/icd10_diagnosis.csv` and `data/generated/patient.csv`.
+
+## MySQL Workbench Note
+
+MySQL Workbench is optional and less reliable for this project because it may not resolve relative `LOAD DATA LOCAL INFILE` paths from the SQL file location. The terminal method from the repository root is recommended. If using Workbench, either run from a configured working directory or generate/use an absolute-path load file locally, but do not commit absolute local paths.
 
 ## Main SQL Logic
 
@@ -321,14 +219,18 @@ The generated bundle also contains `TABLE_TO_CSV_MAP.csv`, `QUERY_COVERAGE.csv`,
 
 `sql/validation.sql` includes post-load checks for:
 
-- row counts;
+- row counts for important reference, staff, patient, hospitalization, clinical, medication, and evaluation tables;
+- hospitalizations without valid patient, department, KEN, or admission ICD-10 diagnosis;
 - missing hospitalization doctors;
 - bed/department mismatches;
 - overlapping bed or patient hospitalizations;
 - bed status inconsistencies;
+- prescriptions whose drug does not exist;
 - prescription allergy conflicts;
 - prescription/procedure dates outside hospitalization;
 - procedure room overlaps;
+- procedure event place type mismatches;
+- same doctor participating in overlapping procedures;
 - incomplete shift coverage;
 - emergency timestamp and referral consistency.
 
@@ -339,13 +241,18 @@ The problem-detection queries should return zero rows after a valid load.
 The assignment PDF asks for the following final structure:
 
 - `README.md`
-- `diagrams/er_diagram.png`
-- `diagrams/schema.pdf`
+- `diagrams/er.pdf`
+- `diagrams/relational.pdf`
+- `docs/report.pdf`
 - `sql/install.sql`
 - `sql/load.sql`
+- `sql/validation.sql`
 - `sql/Q01.sql` through `sql/Q15.sql`
 - `sql/Q01_out.txt` through `sql/Q15_out.txt`
-- `docs/report.pdf`, including the required EXPLAIN / FORCE INDEX comparison for Q4 and Q6
+- `scripts/generate_data.py`
+- `data/reference/*.csv`
+- `data/generated/*.csv`
+- `requirements.txt`
 - optional `app.py`, `ui.py`, and `queries.py` if an application/demo UI is submitted
 
-Current repository note: the portable install/load scripts and validation logic are present, but the final per-query SQL/output files and the Q4/Q6 report material still need to be prepared for the exact submission format.
+Current repository note: placeholder files exist for query outputs and missing final PDFs. Replace those placeholders with the final query outputs and report/diagram PDFs before the last submission export.

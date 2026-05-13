@@ -1,0 +1,16 @@
+entity_name,entity_pk,image_id,entity_description
+department,1,1,Representative placeholder image for Cardiology
+department,2,2,Representative placeholder image for Surgery
+department,3,3,Representative placeholder image for ICU
+department,4,4,Representative placeholder image for Emergency
+department,5,5,Representative placeholder image for Neurology
+department,6,6,Representative placeholder image for Orthopedics
+department,7,7,Representative placeholder image for Pulmonology
+department,8,8,Representative placeholder image for Gastroenterology
+department,9,9,Representative placeholder image for Oncology
+department,10,10,Representative placeholder image for Pediatrics
+department,11,11,Representative placeholder image for Ophthalmology
+department,12,12,Representative placeholder image for ENT
+department,13,13,Representative placeholder image for Nephrology
+department,14,14,Representative placeholder image for Psychiatry
+department,15,15,Representative placeholder image for Internal Medicine
