@@ -14,18 +14,18 @@ The script:
 - writes a MySQL loader with the correct foreign-key load order;
 - writes helper metadata files such as table-to-CSV mapping and query coverage notes.
 
-## Main Command
+## Refresh The Repository Data
 
 ```bash
-python3 scripts/generate_data.py --source-dir data_sources --output-dir hospital_dataset_bundle
+python3 scripts/generate_data.py --source-dir data_sources --output-dir .
 ```
 
-The `--source-dir` folder should contain the official ICD-10, KEN, procedure, and optional EMA files. The output bundle is portable: it contains relative paths only, so it can be moved to another laptop and loaded from its root folder.
+The `--source-dir` folder should contain the official ICD-10, KEN, procedure, and optional EMA files. With `--output-dir .`, the script refreshes the repository-level `data/reference` and `data/generated` folders that `sql/load.sql` reads from.
 
 ```bash
 python3 scripts/generate_data.py \
   --source-dir data_sources \
-  --output-dir hospital_dataset_bundle \
+  --output-dir . \
   --patient-count 500 \
   --emergency-count 1500 \
   --hospitalization-count 1200 \
@@ -39,8 +39,14 @@ Optional EMA Article 57 drug source:
 ```bash
 python3 scripts/generate_data.py \
   --source-dir data_sources \
-  --output-dir hospital_dataset_bundle \
+  --output-dir . \
   --ema-xlsx /path/to/article-57-product-data_en.xlsx
+```
+
+To generate a separate test bundle without changing the repository data, pass a separate output directory:
+
+```bash
+python3 scripts/generate_data.py --source-dir data_sources --output-dir hospital_dataset_bundle
 ```
 
 ## Output

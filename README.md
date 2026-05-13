@@ -83,12 +83,12 @@ Windows alternative:
 py -3 -m pip install -r requirements.txt
 ```
 
-Place official source files in `data_sources`, then generate a portable bundle:
+Place official source files in `data_sources`, then refresh the repository-level `data/` folder:
 
 ```bash
 python3 scripts/generate_data.py \
   --source-dir data_sources \
-  --output-dir hospital_dataset_bundle
+  --output-dir .
 ```
 
 Windows PowerShell alternative:
@@ -96,10 +96,20 @@ Windows PowerShell alternative:
 ```powershell
 py -3 scripts/generate_data.py `
   --source-dir data_sources `
+  --output-dir .
+```
+
+This rewrites `data/reference` and `data/generated` in the same portable layout used by `sql/load.sql`. The final database still loads from `data/`; regeneration is only a refresh step.
+
+If you want a separate test bundle instead of changing the repository data, use another output directory:
+
+```bash
+python3 scripts/generate_data.py \
+  --source-dir data_sources \
   --output-dir hospital_dataset_bundle
 ```
 
-The generated bundle contains `data/reference`, `data/generated`, `sql/install.sql`, `sql/load.sql`, `sql/validation.sql`, `dataset_summary.json`, `TABLE_TO_CSV_MAP.csv`, and `QUERY_COVERAGE.csv`. The generator writes to the directory passed with `--output-dir`; it should not be used to overwrite unrelated project files.
+The generated output contains `data/reference`, `data/generated`, `sql/install.sql`, `sql/load.sql`, `sql/validation.sql`, `dataset_summary.json`, `TABLE_TO_CSV_MAP.csv`, and `QUERY_COVERAGE.csv`. The generator writes only to the directory passed with `--output-dir`; do not pass unrelated folders.
 
 ## Optional Streamlit App
 

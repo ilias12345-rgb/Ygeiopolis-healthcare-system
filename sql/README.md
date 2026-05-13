@@ -13,8 +13,8 @@ This folder contains the database-facing part of the Ygeiopolis Healthcare Syste
 
 1. Start MySQL/MariaDB.
 2. Enable `LOCAL INFILE` in MySQL/MySQL Workbench.
-3. Generate the data bundle with `scripts/generate_data.py`, or otherwise make sure the working folder contains `data/reference` and `data/generated`.
-4. Run `install.sql`, `load.sql`, and `validation.sql` from the project root or from the generated bundle root.
+3. Use the included `data/reference` and `data/generated` folders. Regeneration is optional; if needed, run `python3 scripts/generate_data.py --source-dir data_sources --output-dir .` from the project root.
+4. Run `install.sql`, `load.sql`, and `validation.sql` from the project root.
 
 Example:
 
