@@ -2,7 +2,7 @@
 
 Relational database project for the General Hospital "Ygeiopolis" semester assignment, academic year 2025-2026.
 
-The database models hospital departments, staff, shifts, emergency triage, patients, hospitalizations, diagnoses, KEN costing, lab tests, procedures, prescriptions, allergies, evaluations, and image metadata. The current main schema is the Ygeiopolis vol2 design in `sql/schema.sql`, implemented with primary keys, foreign keys, unique constraints, domain checks, indexes, views, triggers, and stored procedures.
+The database models hospital departments, staff, shifts, emergency triage, patients, hospitalizations, diagnoses, KEN costing, lab tests, procedures, prescriptions, allergies, evaluations, and image metadata. The current main schema is the Ygeiopolis vol2 design in `sql/install.sql`, implemented with primary keys, foreign keys, unique constraints, domain checks, indexes, views, triggers, and stored procedures.
 
 ## Repository Structure
 
@@ -24,8 +24,6 @@ The database models hospital departments, staff, shifts, emergency triage, patie
 │   └── config.toml
 ├── sql/
 │   ├── install.sql
-│   ├── schema.sql
-│   ├── setup.sql
 │   ├── load.sql
 │   ├── validation.sql
 │   ├── Q01.sql ... Q15.sql
@@ -124,9 +122,7 @@ This creates `hospital_dataset_bundle`, which contains everything needed for loa
 - `data/reference/*.csv`
 - `data/generated/*.csv`
 - `sql/install.sql`
-- `sql/schema.sql`
 - `sql/load.sql`
-- `sql/setup.sql`
 - `sql/validation.sql`
 - metadata files such as `dataset_summary.json`, `TABLE_TO_CSV_MAP.csv`, and `QUERY_COVERAGE.csv`
 
@@ -154,29 +150,33 @@ Move into the generated bundle:
 cd hospital_dataset_bundle
 ```
 
-Then run the full setup:
+Then run the schema install, data load, and validation:
 
 ```bash
-mysql --local-infile=1 -u root -p < sql/setup.sql
+mysql -u root -p < sql/install.sql
+mysql --local-infile=1 -u root -p < sql/load.sql
+mysql -u root -p < sql/validation.sql
 ```
 
 Enter the MySQL password when asked. If the local MySQL user has no password, use:
 
 ```bash
-mysql --local-infile=1 -u root < sql/setup.sql
+mysql -u root < sql/install.sql
+mysql --local-infile=1 -u root < sql/load.sql
+mysql -u root < sql/validation.sql
 ```
 
-The `setup.sql` script does three things:
+The scripts do three things:
 
-1. creates the `yg_eupolis_hospital` database;
-2. loads all generated CSV data with relative paths;
-3. runs validation queries.
+1. `install.sql` creates the `yg_eupolis_hospital` database and all schema objects;
+2. `load.sql` loads all generated CSV data with relative paths;
+3. `validation.sql` prints row counts and runs post-load validation queries.
 
 The first output should show row counts for the main tables. The validation queries after that should return zero rows.
 
 ### 7. Run The Scripts Manually If Needed
 
-The full setup is the easiest option, but the same process can be run in three separate steps from inside `hospital_dataset_bundle`:
+The same process can be run again in three separate steps from inside `hospital_dataset_bundle`:
 
 ```bash
 mysql -u root -p < sql/install.sql
@@ -189,9 +189,10 @@ mysql -u root -p yg_eupolis_hospital < sql/validation.sql
 If using MySQL Workbench:
 
 1. Enable `local_infile` / `OPT_LOCAL_INFILE` for the connection.
-2. Open `hospital_dataset_bundle/sql/setup.sql`.
-3. Make sure the working directory is the generated bundle root, because `LOAD DATA LOCAL INFILE` uses relative paths such as `data/generated/patient.csv`.
-4. Run the script.
+2. Open and run `hospital_dataset_bundle/sql/install.sql`.
+3. Open and run `hospital_dataset_bundle/sql/load.sql`.
+4. Open and run `hospital_dataset_bundle/sql/validation.sql`.
+5. Make sure the working directory is the generated bundle root when running `load.sql`, because `LOAD DATA LOCAL INFILE` uses relative paths such as `data/generated/patient.csv`.
 
 Running from terminal is recommended because relative file paths are more predictable.
 
@@ -205,15 +206,17 @@ Running from terminal is recommended because relative file paths are more predic
 
 ### Running From This Repository Instead
 
-The repository itself does not store generated CSV data by default. If `data/reference` and `data/generated` are copied into the project root, the same full setup can also be run from the repository root:
+The repository itself does not store generated CSV data by default. If `data/reference` and `data/generated` are copied into the project root, the same install/load/validation flow can also be run from the repository root:
 
 ```bash
-mysql --local-infile=1 -u root -p < sql/setup.sql
+mysql -u root -p < sql/install.sql
+mysql --local-infile=1 -u root -p < sql/load.sql
+mysql -u root -p < sql/validation.sql
 ```
 
 ## Optional Streamlit App
 
-A Streamlit application is included for local demonstrations. It opens with an operations dashboard for beds, admissions, shifts, emergency visits, procedures, and monitoring counts. It can also run `sql/setup.sql`, edit/save the `Q01.sql` to `Q15.sql` query files, execute queries against the loaded MySQL database, and save query outputs.
+A Streamlit application is included for local demonstrations. It opens with an operations console for beds, admissions, shifts, emergency visits, procedures, clinical activity, and monitoring counts. The sidebar menu also includes patient-record lookup, database setup, and the Q01-Q15 SQL workspace.
 
 Application files:
 
@@ -280,7 +283,7 @@ Important business rules are enforced in SQL:
 | Patient gender | Generated patient gender uses `MALE` and `FEMALE`; the vol2 schema stores it as `VARCHAR`. |
 | Reference data | ICD-10, KEN, medical procedure, and drug reference rows should come from the official files mentioned in the assignment whenever those files are available. |
 | Synthetic data | Operational rows such as patients, visits, hospitalizations, shifts, evaluations, and images are generated synthetically but are designed to satisfy the assignment query requirements. |
-| EMA drugs | If the EMA Article 57 workbook is not provided, the generator creates a clearly marked demo drug/substance fallback so allergy and prescription logic can still be tested. Final submission should replace it with EMA-derived data if required. |
+| EMA drugs | Drug, active-substance, allergy, and prescription rows are loaded only from an official EMA Article 57 workbook. If that file is not provided, these CSVs remain empty so the final database contains no unofficial medication data. |
 | Procedure catalog | Procedure codes and names come from the official procedure catalog. The vol2 schema stores the category and required place type. |
 | KEN costing | Total hospitalization cost equals the KEN base cost plus extra daily cost only for days beyond the KEN mean duration. |
 | Emergency queue | Emergency visits are served by urgency level first, then FIFO by arrival timestamp for equal urgency. |
@@ -295,7 +298,7 @@ The generator creates a deterministic dataset with enough rows for the requested
 - 500 patients;
 - 1200 hospitalizations;
 - 15 departments;
-- 1000 prescriptions;
+- 1000 prescriptions when an official EMA Article 57 workbook is supplied; otherwise medication/allergy tables stay empty;
 - at least 10 operating/procedure places;
 - up to 500 procedure events, depending on room/staff availability;
 - 800 lab tests;
@@ -312,7 +315,7 @@ python3 scripts/generate_data.py \
   --prescription-count 1800
 ```
 
-The generated bundle also contains `TABLE_TO_CSV_MAP.csv`, `QUERY_COVERAGE.csv`, `dataset_summary.json`, and portable `sql/install.sql`, `sql/load.sql`, and `sql/setup.sql` files.
+The generated bundle also contains `TABLE_TO_CSV_MAP.csv`, `QUERY_COVERAGE.csv`, `dataset_summary.json`, and portable `sql/install.sql`, `sql/load.sql`, and `sql/validation.sql` files.
 
 ## Validation
 
@@ -345,4 +348,4 @@ The assignment PDF asks for the following final structure:
 - `docs/report.pdf`, including the required EXPLAIN / FORCE INDEX comparison for Q4 and Q6
 - optional `app.py`, `ui.py`, and `queries.py` if an application/demo UI is submitted
 
-Current repository note: the portable install/load/setup scripts and validation logic are present, but the final per-query SQL/output files and the Q4/Q6 report material still need to be prepared for the exact submission format.
+Current repository note: the portable install/load scripts and validation logic are present, but the final per-query SQL/output files and the Q4/Q6 report material still need to be prepared for the exact submission format.

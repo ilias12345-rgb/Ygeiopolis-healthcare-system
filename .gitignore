@@ -5,6 +5,8 @@ DATASET_GUIDE.md
 QUERY_COVERAGE.csv
 TABLE_TO_CSV_MAP.csv
 dataset_summary.json
+sql/schema.sql
+sql/setup.sql
 
 # Python
 __pycache__/

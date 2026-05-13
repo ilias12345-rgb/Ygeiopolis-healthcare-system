@@ -145,6 +145,8 @@ def connect(config: DbConfig):
         "password": config.password,
         "database": config.database,
         "allow_local_infile": True,
+        "charset": "utf8mb4",
+        "collation": "utf8mb4_unicode_ci",
     }
     if config.unix_socket:
         connection_args["unix_socket"] = config.unix_socket
@@ -173,28 +175,63 @@ def execute_sql(sql_text: str, config: DbConfig) -> SqlResult:
     if not sql_clean:
         raise ValueError("The SQL editor is empty.")
 
+    statements = split_sql_statements(sql_clean)
+    if not statements:
+        raise ValueError("The SQL editor does not contain an executable statement.")
+
     conn = connect(config)
     try:
-        if is_read_query(sql_clean):
-            cursor = conn.cursor(dictionary=True)
-            try:
-                cursor.execute(sql_clean)
-                rows = cursor.fetchall()
-            finally:
-                cursor.close()
-            dataframe = pd.DataFrame(rows)
-            return SqlResult(dataframe=dataframe, message=f"{len(dataframe)} rows returned.")
-
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)
         try:
             affected_rows = 0
-            for statement in split_sql_statements(sql_clean):
+            last_dataframe: Optional[pd.DataFrame] = None
+            needs_commit = False
+
+            for statement in statements:
+                keyword = first_sql_keyword(statement)
                 cursor.execute(statement)
-                affected_rows += max(cursor.rowcount, 0)
-            conn.commit()
+                if cursor.with_rows:
+                    columns = [column[0] for column in cursor.description]
+                    rows = cursor.fetchall()
+                    last_dataframe = pd.DataFrame(rows, columns=columns)
+                else:
+                    affected_rows += max(cursor.rowcount, 0)
+                    if keyword not in {"use", "set", "show", "describe", "desc", "explain"}:
+                        needs_commit = True
+
+            if needs_commit:
+                conn.commit()
+            if last_dataframe is not None:
+                return SqlResult(
+                    dataframe=last_dataframe,
+                    message=f"{len(last_dataframe)} rows returned.",
+                )
+
+            return SqlResult(affected_rows=affected_rows, message=f"Affected rows: {affected_rows}")
         finally:
             cursor.close()
-        return SqlResult(affected_rows=affected_rows, message=f"Affected rows: {affected_rows}")
+    finally:
+        conn.close()
+
+
+def execute_read_query(sql_text: str, config: DbConfig) -> SqlResult:
+    sql_clean = sql_text.strip()
+    if not is_read_query(sql_clean):
+        raise ValueError("Expected a read query.")
+
+    conn = connect(config)
+    try:
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute(sql_clean)
+            if not cursor.with_rows:
+                raise ValueError("Query did not return rows.")
+            columns = [column[0] for column in cursor.description]
+            rows = cursor.fetchall()
+            dataframe = pd.DataFrame(rows, columns=columns)
+            return SqlResult(dataframe=dataframe, message=f"{len(dataframe)} rows returned.")
+        finally:
+            cursor.close()
     finally:
         conn.close()
 

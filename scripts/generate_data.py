@@ -64,52 +64,6 @@ BED_TYPES = ["ICU", "SINGLE", "MULTI_BED"]
 BED_STATUSES = ["AVAILABLE", "AVAILABLE", "AVAILABLE", "OCCUPIED", "MAINTENANCE"]
 PLACE_TYPES = ["OPERATING_ROOM"] * 8 + ["PROCEDURE_ROOM"] * 4
 
-DEMO_DRUGS = [
-    ("DEMO0001", "Paracetamol 500mg tablet", ["PARACETAMOL"]),
-    ("DEMO0002", "Ibuprofen 400mg tablet", ["IBUPROFEN"]),
-    ("DEMO0003", "Amoxicillin 500mg capsule", ["AMOXICILLIN"]),
-    ("DEMO0004", "Amoxicillin/Clavulanic acid tablet", ["AMOXICILLIN", "CLAVULANIC ACID"]),
-    ("DEMO0005", "Omeprazole 20mg capsule", ["OMEPRAZOLE"]),
-    ("DEMO0006", "Metformin 850mg tablet", ["METFORMIN"]),
-    ("DEMO0007", "Atorvastatin 20mg tablet", ["ATORVASTATIN"]),
-    ("DEMO0008", "Losartan 50mg tablet", ["LOSARTAN"]),
-    ("DEMO0009", "Cefuroxime 500mg tablet", ["CEFUROXIME"]),
-    ("DEMO0010", "Gentamicin injection", ["GENTAMICIN"]),
-    ("DEMO0011", "Enoxaparin syringe", ["ENOXAPARIN"]),
-    ("DEMO0012", "Clopidogrel 75mg tablet", ["CLOPIDOGREL"]),
-    ("DEMO0013", "Salbutamol inhaler", ["SALBUTAMOL"]),
-    ("DEMO0014", "Budesonide inhalation suspension", ["BUDESONIDE"]),
-    ("DEMO0015", "Insulin glargine injection", ["INSULIN GLARGINE"]),
-    ("DEMO0016", "Furosemide 40mg tablet", ["FUROSEMIDE"]),
-    ("DEMO0017", "Azithromycin 500mg tablet", ["AZITHROMYCIN"]),
-    ("DEMO0018", "Morphine injection", ["MORPHINE"]),
-    ("DEMO0019", "Tramadol 100mg capsule", ["TRAMADOL"]),
-    ("DEMO0020", "Ondansetron 8mg tablet", ["ONDANSETRON"]),
-]
-
-DEMO_KEN_ROWS = [
-    ("DKEN001", "Demo cardiology short stay", 1200.00, 3),
-    ("DKEN002", "Demo cardiology complex stay", 4200.00, 8),
-    ("DKEN003", "Demo general surgery simple procedure", 1800.00, 4),
-    ("DKEN004", "Demo general surgery complex procedure", 6200.00, 10),
-    ("DKEN005", "Demo ICU respiratory support", 8500.00, 12),
-    ("DKEN006", "Demo neurology admission", 2300.00, 6),
-    ("DKEN007", "Demo orthopedic admission", 3100.00, 7),
-    ("DKEN008", "Demo pulmonary infection", 1600.00, 5),
-    ("DKEN009", "Demo gastroenterology admission", 1400.00, 4),
-    ("DKEN010", "Demo oncology admission", 3600.00, 9),
-    ("DKEN011", "Demo pediatrics admission", 900.00, 3),
-    ("DKEN012", "Demo ophthalmology procedure", 1000.00, 2),
-    ("DKEN013", "Demo ENT admission", 950.00, 3),
-    ("DKEN014", "Demo nephrology admission", 2800.00, 7),
-    ("DKEN015", "Demo psychiatry admission", 1700.00, 8),
-    ("DKEN016", "Demo internal medicine admission", 1500.00, 5),
-    ("DKEN017", "Demo emergency observation", 600.00, 1),
-    ("DKEN018", "Demo high cost transplant-like case", 18000.00, 20),
-    ("DKEN019", "Demo diagnostic same-day case", 450.00, 1),
-    ("DKEN020", "Demo therapeutic intervention", 2500.00, 6),
-]
-
 COMMON_SUBSTANCE_PAIRS = [
     ("PARACETAMOL", "ONDANSETRON"),
     ("AMOXICILLIN", "OMEPRAZOLE"),
@@ -151,7 +105,10 @@ def parse_money_eur(s):
     s = s.replace("€", "").replace("EUR", "").strip()
     s = s.replace(".", "").replace(",", ".")
     s = re.sub(r"[^0-9.]", "", s)
-    return float(s) if s else None
+    try:
+        return float(s) if s else None
+    except ValueError:
+        return None
 
 
 def derive_proc_category(name: str) -> str:
@@ -295,13 +252,70 @@ def read_word_table_or_text(path: Path):
         if antiword:
             txt = subprocess.run([antiword, str(path)], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True).stdout
             return txt, 'text'
+        textutil = shutil.which('textutil')
+        if textutil and Document is not None:
+            with tempfile.TemporaryDirectory() as td:
+                converted = Path(td) / f"{path.stem}.docx"
+                subprocess.run([textutil, '-convert', 'docx', '-output', str(converted), str(path)], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                return Document(converted), 'docx'
     raise FileNotFoundError(f"Unsupported Word source file: {path}")
+
+
+def looks_like_ken_code(value: str) -> bool:
+    value = normalize_space(value)
+    if not value or value.startswith('ΤΚΑ') or 'ΚΩΔΙΚ' in value:
+        return False
+    return bool(re.fullmatch(r"[A-ZΑ-Ω][A-ZΑ-Ω0-9-]{1,12}", value.upper()))
+
+
+def parse_ken_from_lines(lines: list[str]) -> pd.DataFrame:
+    rows = []
+    cleaned = [normalize_space(line) for line in lines]
+    cleaned = [line for line in cleaned if line]
+    i = 0
+    while i < len(cleaned):
+        code = cleaned[i]
+        if not looks_like_ken_code(code):
+            i += 1
+            continue
+
+        desc_parts = []
+        money = None
+        days = None
+        j = i + 1
+        while j < len(cleaned):
+            current = cleaned[j]
+            current_money = parse_money_eur(current)
+            if current_money is not None and re.search(r"\d", current):
+                money = current_money
+                j += 1
+                break
+            if looks_like_ken_code(current) and desc_parts:
+                break
+            desc_parts.append(current)
+            j += 1
+
+        if money is not None and j < len(cleaned):
+            day_match = re.search(r"\d+", cleaned[j])
+            if day_match:
+                days = int(day_match.group(0))
+                j += 1
+
+        if desc_parts and money is not None and days is not None:
+            rows.append((code.upper(), " ".join(desc_parts), round(money, 2), days))
+            i = j
+        else:
+            i += 1
+
+    return normalize_ken_dataframe(pd.DataFrame(rows, columns=['ken_code','ken_description','basic_cost','mean_duration_days']))
 
 
 def parse_ken_from_text(txt: str):
     rows = []
     lines = [normalize_space(x) for x in txt.splitlines()]
-    current_code = current_desc = None
+    sequence_rows = parse_ken_from_lines(lines)
+    if not sequence_rows.empty:
+        return sequence_rows
     for line in lines:
         if not line:
             continue
@@ -378,7 +392,7 @@ def normalize_ken_dataframe(raw: pd.DataFrame) -> pd.DataFrame:
     return df[["ken_code", "ken_description", "basic_cost", "mean_duration_days", "extra_daily_cost"]].drop_duplicates("ken_code").reset_index(drop=True)
 
 
-def is_demo_ken(df: pd.DataFrame) -> bool:
+def is_placeholder_ken(df: pd.DataFrame) -> bool:
     return not df.empty and df["ken_code"].astype(str).str.startswith("DKEN").all()
 
 
@@ -398,11 +412,14 @@ def parse_ken_from_docx(document) -> pd.DataFrame:
             if not numeric_cells or not day_cells:
                 continue
             rows.append((code, cells[1], parse_money_eur(numeric_cells[0]), int(day_cells[-1])))
-    return normalize_ken_dataframe(pd.DataFrame(rows, columns=["ken_code", "ken_description", "basic_cost", "mean_duration_days"]))
+    table_rows = normalize_ken_dataframe(pd.DataFrame(rows, columns=["ken_code", "ken_description", "basic_cost", "mean_duration_days"]))
+    if not table_rows.empty:
+        return table_rows
+    return parse_ken_from_lines([paragraph.text for paragraph in document.paragraphs])
 
 
 def load_ken_reference(source_dir: Path, out_ref_dir: Path):
-    """Prefer improved official KEN CSVs, then parse Word sources, then use demo fallback."""
+    """Prefer improved official KEN CSVs, then parse official Word sources."""
 
     csv_candidates = [
         out_ref_dir / "ken.csv",
@@ -413,7 +430,6 @@ def load_ken_reference(source_dir: Path, out_ref_dir: Path):
         csv_candidates.extend(source_dir.rglob("ken.csv"))
 
     official_ken = []
-    fallback_ken = []
     seen = set()
     for csv_path in csv_candidates:
         if not csv_path.exists() or csv_path in seen:
@@ -428,9 +444,7 @@ def load_ken_reference(source_dir: Path, out_ref_dir: Path):
                 continue
         if candidate.empty:
             continue
-        if is_demo_ken(candidate):
-            fallback_ken.append(candidate)
-        else:
+        if not is_placeholder_ken(candidate):
             official_ken.append(candidate)
     if official_ken:
         return max(official_ken, key=len), "official_csv"
@@ -444,16 +458,12 @@ def load_ken_reference(source_dir: Path, out_ref_dir: Path):
         ])
         source, kind = read_word_table_or_text(ken_path)
         ken = parse_ken_from_docx(source) if kind == "docx" else normalize_ken_dataframe(parse_ken_from_text(source))
-        if not ken.empty and not is_demo_ken(ken):
+        if not ken.empty and not is_placeholder_ken(ken):
             return ken, "official_word"
     except Exception:
         pass
 
-    if fallback_ken:
-        return max(fallback_ken, key=len), "demo_existing"
-
-    ken = normalize_ken_dataframe(pd.DataFrame(DEMO_KEN_ROWS, columns=["ken_code", "ken_description", "basic_cost", "mean_duration_days"]))
-    return ken, "demo_generated"
+    raise FileNotFoundError("Official KEN data was not found or could not be parsed. Provide the assignment KEN Word file or a cleaned official ken.csv.")
 
 
 def build_generated_icd10_ken_map(icd: pd.DataFrame, ken: pd.DataFrame) -> pd.DataFrame:
@@ -522,7 +532,7 @@ def load_icd10_ken_map(source_dir: Path, icd: pd.DataFrame, ken: pd.DataFrame):
     return build_generated_icd10_ken_map(icd, ken), "generated_compatible"
 
 
-def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | None = None, allow_demo_drugs: bool = True):
+def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | None = None):
     """Load official reference sources and write normalized reference CSVs."""
 
     out_ref_dir.mkdir(parents=True, exist_ok=True)
@@ -542,7 +552,7 @@ def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | No
     icd.to_csv(out_ref_dir / "icd10_diagnosis.csv", index=False)
 
     # KEN: prefer the improved official CSV that may already exist in the
-    # output bundle, then official Word sources, and only then demo fallback.
+    # output bundle, then parse official Word sources.
     ken, ken_mode = load_ken_reference(source_dir, out_ref_dir)
     ken.to_csv(out_ref_dir / "ken.csv", index=False)
 
@@ -589,7 +599,7 @@ def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | No
 
     meta = {
         "seed": SEED,
-        "note": "ICD-10, KEN, ICD10-KEN, and procedure references are cleaned from the best available official/improved sources. Demo KEN is used only when no official KEN data exists.",
+        "note": "ICD-10, KEN, ICD10-KEN, and procedure references are cleaned from the best available official/improved sources. Demo reference rows are not generated for the final dataset.",
         "ken_mode": ken_mode,
         "icd10_ken_mode": icd_ken_mode,
         "ema_mode": None,
@@ -631,28 +641,12 @@ def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | No
         active_substance = pd.DataFrame(substances, columns=["substance_id", "substance_name"])
         drug_active_substance = pd.DataFrame(edges, columns=["drug_id", "substance_id"]).drop_duplicates()
         meta["ema_mode"] = "official"
-    elif allow_demo_drugs:
-        drugs = []
-        substance_map = {}
-        next_sid = 1
-        edges = []
-        for drug_id, drug_name, subs in DEMO_DRUGS:
-            drugs.append((drug_id, drug_name))
-            for s in subs:
-                if s not in substance_map:
-                    substance_map[s] = next_sid
-                    next_sid += 1
-                edges.append((drug_id, substance_map[s]))
-        drug = pd.DataFrame(drugs, columns=["drug_id", "drug_name"])
-        active_substance = pd.DataFrame([(sid, name) for name, sid in substance_map.items()], columns=["substance_id", "substance_name"]).sort_values("substance_id")
-        drug_active_substance = pd.DataFrame(edges, columns=["drug_id", "substance_id"]).drop_duplicates()
-        meta["ema_mode"] = "demo_fallback"
-        meta["note_drugs"] = "EMA Article 57 file was not provided. Drug-related reference tables were populated with a clearly marked demo fallback so that Q7 and Q10 can be tested end-to-end. Replace these three CSVs with official EMA-derived exports for a submission-compliant final load."
     else:
         drug = pd.DataFrame(columns=["drug_id", "drug_name"])
         active_substance = pd.DataFrame(columns=["substance_id", "substance_name"])
         drug_active_substance = pd.DataFrame(columns=["drug_id", "substance_id"])
         meta["ema_mode"] = "missing"
+        meta["note_drugs"] = "EMA Article 57 file was not provided. Drug, active-substance, allergy, and prescription CSVs are intentionally empty until an official EMA export is supplied."
 
     drug.to_csv(out_ref_dir / "drug.csv", index=False)
     active_substance.to_csv(out_ref_dir / "active_substance.csv", index=False)
@@ -1402,144 +1396,159 @@ def build_clinical_events(
     bed_status_df[["bed_id", "department_id", "bed_type", "bed_status"]].to_csv(gen_dir / "bed.csv", index=False)
     org["bed"] = bed_status_df
 
-    # Allergies
+    allergy_columns = ["patient_amka", "substance_id"]
+    prescription_columns = [
+        "prescription_id",
+        "hosp_id",
+        "patient_amka",
+        "doctor_amka",
+        "drug_id",
+        "dosage",
+        "frequency",
+        "start_datetime",
+        "end_datetime",
+    ]
+
+    # Allergies and prescriptions are generated only when official EMA-derived
+    # drug/substance references exist. Without EMA, these CSVs stay empty
+    # instead of introducing fake medication data into the final database.
     substances = ref["active_substance"].copy()
     substance_ids = list(substances["substance_id"])
-    if not substance_ids:
-        raise ValueError("active_substance.csv is empty; cannot create patient allergies safely.")
-    common_substance_ids = {s: int(substances.loc[substances["substance_name"] == s, "substance_id"].iloc[0]) for pair in COMMON_SUBSTANCE_PAIRS for s in pair if s in set(substances["substance_name"])}
-    allergy_patients = random.sample(patient_ids, 70)
-    for p in allergy_patients:
-        chosen = set(random.sample(substance_ids, k=random.randint(1, 3)))
-        # make popular allergy substances appear more often
-        if common_substance_ids and random.random() < 0.45:
-            chosen.add(pick(list(common_substance_ids.values())))
-        for sid in chosen:
-            allergy_rows.append({"patient_amka": p, "substance_id": sid})
-    allergy_df = pd.DataFrame(allergy_rows).drop_duplicates()
-
-    # Prescriptions (query-driven for Q10)
     drug_df = ref["drug"].copy()
     das = ref["drug_active_substance"].copy()
-    if drug_df.empty or das.empty:
-        raise ValueError("Drug reference tables are empty; cannot create prescriptions safely.")
-    sub_name = dict(ref["active_substance"][["substance_id","substance_name"]].itertuples(index=False, name=None))
-    drug_to_subs = defaultdict(set)
-    for r in das.itertuples(index=False):
-        drug_to_subs[r.drug_id].add(sub_name[r.substance_id])
+    if not substance_ids or drug_df.empty or das.empty:
+        allergy_df = pd.DataFrame(columns=allergy_columns)
+        presc_df = pd.DataFrame(columns=prescription_columns)
+    else:
+        common_substance_ids = {s: int(substances.loc[substances["substance_name"] == s, "substance_id"].iloc[0]) for pair in COMMON_SUBSTANCE_PAIRS for s in pair if s in set(substances["substance_name"])}
+        allergy_patients = random.sample(patient_ids, 70)
+        for p in allergy_patients:
+            chosen = set(random.sample(substance_ids, k=random.randint(1, 3)))
+            # make popular allergy substances appear more often
+            if common_substance_ids and random.random() < 0.45:
+                chosen.add(pick(list(common_substance_ids.values())))
+            for sid in chosen:
+                allergy_rows.append({"patient_amka": p, "substance_id": sid})
+        allergy_df = pd.DataFrame(allergy_rows).drop_duplicates()
 
-    def safe_drugs_for_patient(patient_amka):
-        banned = set(sub_name[sid] for sid in allergy_df.loc[allergy_df["patient_amka"] == patient_amka, "substance_id"].tolist())
-        out = []
-        for drug_id in drug_df["drug_id"]:
-            if not (drug_to_subs[drug_id] & banned):
-                out.append(drug_id)
-        return out
+        # Prescriptions (query-driven for Q10)
+        sub_name = dict(ref["active_substance"][["substance_id","substance_name"]].itertuples(index=False, name=None))
+        drug_to_subs = defaultdict(set)
+        for r in das.itertuples(index=False):
+            drug_to_subs[r.drug_id].add(sub_name[r.substance_id])
 
-    # helper: pick a drug containing a target substance
-    drugs_by_sub = defaultdict(list)
-    for d, subs in drug_to_subs.items():
-        for s in subs:
-            drugs_by_sub[s].append(d)
+        def safe_drugs_for_patient(patient_amka):
+            banned = set(sub_name[sid] for sid in allergy_df.loc[allergy_df["patient_amka"] == patient_amka, "substance_id"].tolist())
+            out = []
+            for drug_id in drug_df["drug_id"]:
+                if not (drug_to_subs[drug_id] & banned):
+                    out.append(drug_id)
+            return out
 
-    prescription_id = 1
-    # target pairs
-    hosp_for_pairs = hosp_df.sample(n=min(90, len(hosp_df)), random_state=SEED)
-    for i, row in enumerate(hosp_for_pairs.itertuples(index=False)):
-        pair = COMMON_SUBSTANCE_PAIRS[i % len(COMMON_SUBSTANCE_PAIRS)]
-        safe = set(safe_drugs_for_patient(row.patient_amka))
-        d1_candidates = [d for d in drugs_by_sub.get(pair[0], []) if d in safe]
-        d2_candidates = [d for d in drugs_by_sub.get(pair[1], []) if d in safe and d not in d1_candidates]
-        if not d1_candidates or not d2_candidates:
-            continue
-        admission_ts = datetime.fromisoformat(row.admission_ts)
-        discharge_ts = datetime.fromisoformat(row.discharge_ts)
-        max_start_hours = max(1, int((discharge_ts - admission_ts).total_seconds() // 3600) - 2)
-        if max_start_hours < 3:
-            continue
-        start_base = admission_ts + timedelta(hours=random.randint(3, min(24, max_start_hours)))
-        end_dt = min(discharge_ts, start_base + timedelta(days=random.randint(2, 6)))
-        if end_dt <= start_base:
-            continue
-        doctor_choices = hosp_doc_df.loc[hosp_doc_df["hosp_id"] == row.hosp_id, "doctor_amka"].tolist()
-        for drug_id in [pick(d1_candidates), pick(d2_candidates)]:
+        # helper: pick a drug containing a target substance
+        drugs_by_sub = defaultdict(list)
+        for d, subs in drug_to_subs.items():
+            for s in subs:
+                drugs_by_sub[s].append(d)
+
+        prescription_id = 1
+        # target pairs
+        hosp_for_pairs = hosp_df.sample(n=min(90, len(hosp_df)), random_state=SEED)
+        for i, row in enumerate(hosp_for_pairs.itertuples(index=False)):
+            pair = COMMON_SUBSTANCE_PAIRS[i % len(COMMON_SUBSTANCE_PAIRS)]
+            safe = set(safe_drugs_for_patient(row.patient_amka))
+            d1_candidates = [d for d in drugs_by_sub.get(pair[0], []) if d in safe]
+            d2_candidates = [d for d in drugs_by_sub.get(pair[1], []) if d in safe and d not in d1_candidates]
+            if not d1_candidates or not d2_candidates:
+                continue
+            admission_ts = datetime.fromisoformat(row.admission_ts)
+            discharge_ts = datetime.fromisoformat(row.discharge_ts)
+            max_start_hours = max(1, int((discharge_ts - admission_ts).total_seconds() // 3600) - 2)
+            if max_start_hours < 3:
+                continue
+            start_base = admission_ts + timedelta(hours=random.randint(3, min(24, max_start_hours)))
+            end_dt = min(discharge_ts, start_base + timedelta(days=random.randint(2, 6)))
+            if end_dt <= start_base:
+                continue
+            doctor_choices = hosp_doc_df.loc[hosp_doc_df["hosp_id"] == row.hosp_id, "doctor_amka"].tolist()
+            for drug_id in [pick(d1_candidates), pick(d2_candidates)]:
+                prescription_rows.append({
+                    "prescription_id": prescription_id,
+                    "hosp_id": row.hosp_id,
+                    "patient_amka": row.patient_amka,
+                    "doctor_amka": pick(doctor_choices),
+                    "drug_id": drug_id,
+                    "dosage": pick(["1 tablet", "500 mg", "1 vial", "1 capsule", "40 mg"]),
+                    "frequency": pick(["BID", "TID", "QD", "Q6H"]),
+                    "start_datetime": start_base.strftime("%Y-%m-%d %H:%M:%S"),
+                    "end_datetime": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                })
+                prescription_id += 1
+
+        # fill remainder
+        while len(prescription_rows) < prescription_count:
+            row = hosp_df.sample(n=1).iloc[0]
+            safe = safe_drugs_for_patient(row.patient_amka)
+            if not safe:
+                continue
+            start_base = datetime.fromisoformat(row.admission_ts) + timedelta(hours=random.randint(1, 48))
+            end_limit = datetime.fromisoformat(row.discharge_ts)
+            end_dt = min(end_limit, start_base + timedelta(days=random.randint(1, 7)))
+            if end_dt <= start_base:
+                continue
+            doctor_choices = hosp_doc_df.loc[hosp_doc_df["hosp_id"] == row.hosp_id, "doctor_amka"].tolist()
             prescription_rows.append({
                 "prescription_id": prescription_id,
-                "hosp_id": row.hosp_id,
+                "hosp_id": int(row.hosp_id),
                 "patient_amka": row.patient_amka,
                 "doctor_amka": pick(doctor_choices),
-                "drug_id": drug_id,
+                "drug_id": pick(safe),
                 "dosage": pick(["1 tablet", "500 mg", "1 vial", "1 capsule", "40 mg"]),
-                "frequency": pick(["BID", "TID", "QD", "Q6H"]),
+                "frequency": pick(["BID", "TID", "QD", "Q6H", "Q8H"]),
                 "start_datetime": start_base.strftime("%Y-%m-%d %H:%M:%S"),
                 "end_datetime": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
             })
             prescription_id += 1
-
-    # fill remainder
-    while len(prescription_rows) < prescription_count:
-        row = hosp_df.sample(n=1).iloc[0]
-        safe = safe_drugs_for_patient(row.patient_amka)
-        if not safe:
-            continue
-        start_base = datetime.fromisoformat(row.admission_ts) + timedelta(hours=random.randint(1, 48))
-        end_limit = datetime.fromisoformat(row.discharge_ts)
-        end_dt = min(end_limit, start_base + timedelta(days=random.randint(1, 7)))
-        if end_dt <= start_base:
-            continue
-        doctor_choices = hosp_doc_df.loc[hosp_doc_df["hosp_id"] == row.hosp_id, "doctor_amka"].tolist()
-        prescription_rows.append({
-            "prescription_id": prescription_id,
-            "hosp_id": int(row.hosp_id),
-            "patient_amka": row.patient_amka,
-            "doctor_amka": pick(doctor_choices),
-            "drug_id": pick(safe),
-            "dosage": pick(["1 tablet", "500 mg", "1 vial", "1 capsule", "40 mg"]),
-            "frequency": pick(["BID", "TID", "QD", "Q6H", "Q8H"]),
-            "start_datetime": start_base.strftime("%Y-%m-%d %H:%M:%S"),
-            "end_datetime": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
-        })
-        prescription_id += 1
-    presc_df = pd.DataFrame(prescription_rows).drop_duplicates(subset=["doctor_amka", "patient_amka", "drug_id", "start_datetime"])
-    seen_prescriptions = set(
-        presc_df[["doctor_amka", "patient_amka", "drug_id", "start_datetime"]]
-        .astype(str)
-        .itertuples(index=False, name=None)
-    )
-    prescription_rows = presc_df.to_dict("records")
-    attempts = 0
-    while len(prescription_rows) < prescription_count and attempts < prescription_count * 20:
-        attempts += 1
-        row = hosp_df.sample(n=1, random_state=SEED + attempts).iloc[0]
-        safe = safe_drugs_for_patient(row.patient_amka)
-        if not safe:
-            continue
-        start_base = datetime.fromisoformat(row.admission_ts) + timedelta(hours=random.randint(1, 48), minutes=attempts % 60)
-        end_limit = datetime.fromisoformat(row.discharge_ts)
-        end_dt = min(end_limit, start_base + timedelta(days=random.randint(1, 7)))
-        if end_dt <= start_base:
-            continue
-        doctor_choices = hosp_doc_df.loc[hosp_doc_df["hosp_id"] == row.hosp_id, "doctor_amka"].tolist()
-        drug_id = pick(safe)
-        key = (str(pick(doctor_choices)), str(row.patient_amka), str(drug_id), start_base.strftime("%Y-%m-%d %H:%M:%S"))
-        if key in seen_prescriptions:
-            continue
-        seen_prescriptions.add(key)
-        prescription_rows.append({
-            "prescription_id": prescription_id,
-            "hosp_id": int(row.hosp_id),
-            "patient_amka": row.patient_amka,
-            "doctor_amka": key[0],
-            "drug_id": drug_id,
-            "dosage": pick(["1 tablet", "500 mg", "1 vial", "1 capsule", "40 mg"]),
-            "frequency": pick(["BID", "TID", "QD", "Q6H", "Q8H"]),
-            "start_datetime": key[3],
-            "end_datetime": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
-        })
-        prescription_id += 1
-    presc_df = pd.DataFrame(prescription_rows).sort_values("prescription_id").reset_index(drop=True)
-    if len(presc_df) < 360:
-        raise ValueError("Could not generate 360 unique, allergy-safe prescriptions.")
+        presc_df = pd.DataFrame(prescription_rows).drop_duplicates(subset=["doctor_amka", "patient_amka", "drug_id", "start_datetime"])
+        seen_prescriptions = set(
+            presc_df[["doctor_amka", "patient_amka", "drug_id", "start_datetime"]]
+            .astype(str)
+            .itertuples(index=False, name=None)
+        )
+        prescription_rows = presc_df.to_dict("records")
+        attempts = 0
+        while len(prescription_rows) < prescription_count and attempts < prescription_count * 20:
+            attempts += 1
+            row = hosp_df.sample(n=1, random_state=SEED + attempts).iloc[0]
+            safe = safe_drugs_for_patient(row.patient_amka)
+            if not safe:
+                continue
+            start_base = datetime.fromisoformat(row.admission_ts) + timedelta(hours=random.randint(1, 48), minutes=attempts % 60)
+            end_limit = datetime.fromisoformat(row.discharge_ts)
+            end_dt = min(end_limit, start_base + timedelta(days=random.randint(1, 7)))
+            if end_dt <= start_base:
+                continue
+            doctor_choices = hosp_doc_df.loc[hosp_doc_df["hosp_id"] == row.hosp_id, "doctor_amka"].tolist()
+            drug_id = pick(safe)
+            key = (str(pick(doctor_choices)), str(row.patient_amka), str(drug_id), start_base.strftime("%Y-%m-%d %H:%M:%S"))
+            if key in seen_prescriptions:
+                continue
+            seen_prescriptions.add(key)
+            prescription_rows.append({
+                "prescription_id": prescription_id,
+                "hosp_id": int(row.hosp_id),
+                "patient_amka": row.patient_amka,
+                "doctor_amka": key[0],
+                "drug_id": drug_id,
+                "dosage": pick(["1 tablet", "500 mg", "1 vial", "1 capsule", "40 mg"]),
+                "frequency": pick(["BID", "TID", "QD", "Q6H", "Q8H"]),
+                "start_datetime": key[3],
+                "end_datetime": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
+            })
+            prescription_id += 1
+        presc_df = pd.DataFrame(prescription_rows).sort_values("prescription_id").reset_index(drop=True)
+        if len(presc_df) < 360:
+            raise ValueError("Could not generate 360 unique, allergy-safe prescriptions.")
 
     # Minimal images
     for img_id, dep in enumerate(dept_df.itertuples(index=False), start=1):
@@ -1822,9 +1831,9 @@ This bundle contains:
 - cleaned **reference CSVs** from the uploaded official files;
 - a deterministic **query-driven synthetic dataset**;
     - a Python generator script: `scripts/generate_data.py`;
+- a schema installer copied from the project: `sql/install.sql`;
 - a convenience loader: `sql/load.sql`;
-- a portable setup runner: `sql/setup.sql`;
-- copies of `sql/install.sql`, `sql/schema.sql`, and `sql/validation.sql` from the project;
+- a validation script copied from the project: `sql/validation.sql`;
 - a table-to-CSV manifest: `TABLE_TO_CSV_MAP.csv`.
 
 ## Important schema assumptions
@@ -1836,8 +1845,8 @@ This dataset targets the **Ygeiopolis vol2 schema**, with the following minimal 
 3. `emergency_visit` includes `referred_department_id` and the vol2 `status` field.
 4. `hospitalization_doctor` stores the doctor link only, matching vol2.
 5. `procedure_participant` stores the participant link only, matching vol2.
-6. `ken.csv` uses the improved/official KEN export when available; demo KEN rows are used only as a last-resort fallback.
-7. If the official EMA Article 57 workbook is not supplied, the generator falls back to a clearly marked **demo drug dataset** so Q7/Q10 can still be tested end-to-end.
+6. `ken.csv` uses only the improved/official KEN export; the generator fails clearly if official KEN data cannot be found or parsed.
+7. If the official EMA Article 57 workbook is not supplied, drug/prescription/allergy CSVs remain empty by default so the final load contains no unofficial medication data.
 8. Procedure codes and names come from the official procedure catalog; vol2 keeps category and required place type in the loaded table.
 
 ## Name mapping logic
@@ -1873,7 +1882,6 @@ def main():
     parser.add_argument("--source-dir", default=str(default_root), help="Directory containing the uploaded source files.")
     parser.add_argument("--output-dir", default=str(default_root / "hospital_dataset_bundle"), help="Output bundle root.")
     parser.add_argument("--ema-xlsx", default=None, help="Optional EMA Article 57 workbook for official drug reference data.")
-    parser.add_argument("--no-demo-drugs", action="store_true", help="Disable the fallback demo drug dataset if EMA is missing.")
     parser.add_argument("--patient-count", type=int, default=500, help="Number of synthetic patients to generate.")
     parser.add_argument("--emergency-count", type=int, default=1500, help="Number of synthetic emergency visits to generate.")
     parser.add_argument("--hospitalization-count", type=int, default=1200, help="Target number of hospitalizations to generate.")
@@ -1890,7 +1898,7 @@ def main():
     (bundle_dir / "data" / "generated").mkdir(parents=True, exist_ok=True)
     (bundle_dir / "scripts").mkdir(parents=True, exist_ok=True)
 
-    ref = load_reference_data(source_dir, ref_dir, ema_xlsx=Path(args.ema_xlsx) if args.ema_xlsx else None, allow_demo_drugs=not args.no_demo_drugs)
+    ref = load_reference_data(source_dir, ref_dir, ema_xlsx=Path(args.ema_xlsx) if args.ema_xlsx else None)
     org = build_people_and_org(gen_dir)
     patients = build_patients(gen_dir, count=args.patient_count)
     shifts = build_shifts(gen_dir, org)
@@ -1908,30 +1916,11 @@ def main():
     validate_generated_bundle(ref, org, patients, clinical)
     write_load_sql(bundle_dir)
     project_sql_dir = script_path.parents[1] / "sql"
-    for sql_name in ["install.sql", "schema.sql", "validation.sql"]:
+    for sql_name in ["install.sql", "validation.sql"]:
         source_sql = project_sql_dir / sql_name
         target_sql = bundle_dir / "sql" / sql_name
         if source_sql.exists() and source_sql.resolve() != target_sql.resolve():
             shutil.copy2(source_sql, target_sql)
-    setup_parts = [
-        ("install.sql", bundle_dir / "sql" / "install.sql"),
-        ("load.sql", bundle_dir / "sql" / "load.sql"),
-        ("validation.sql", bundle_dir / "sql" / "validation.sql"),
-    ]
-    setup_lines = [
-        "-- Portable full setup script. Run from the project or generated bundle root:",
-        "-- mysql --local-infile=1 -u root -p < sql/setup.sql",
-        "--",
-        "-- The relative LOAD DATA paths in this file expect:",
-        "-- data/reference/*.csv",
-        "-- data/generated/*.csv",
-        "",
-    ]
-    for label, path in setup_parts:
-        setup_lines.append(f"-- === {label} ===")
-        setup_lines.append(path.read_text(encoding="utf-8").rstrip())
-        setup_lines.append("")
-    (bundle_dir / "sql" / "setup.sql").write_text("\n".join(setup_lines), encoding="utf-8")
     write_guides(bundle_dir, ref, {**org, **patients, **shifts, **emergencies, **clinical})
     target_script = bundle_dir / "scripts" / "generate_data.py"
     if script_path.resolve() != target_script.resolve():

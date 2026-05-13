@@ -5,9 +5,7 @@ This folder contains the database-facing part of the Ygeiopolis Healthcare Syste
 ## Files
 
 - `install.sql`: portable entrypoint for creating the schema.
-- `schema.sql`: creates the `yg_eupolis_hospital` database, tables, constraints, indexes, views, triggers, and stored procedures.
 - `load.sql`: portable relative-path loader for generated CSV data under `data/reference` and `data/generated`.
-- `setup.sql`: portable schema + load + validation script. Run it from the project or generated bundle root.
 - `validation.sql`: sanity checks to run after loading data.
 - `Q01.sql` through `Q15.sql`: placeholders for the final assignment queries.
 
@@ -16,15 +14,9 @@ This folder contains the database-facing part of the Ygeiopolis Healthcare Syste
 1. Start MySQL/MariaDB.
 2. Enable `LOCAL INFILE` in MySQL/MySQL Workbench.
 3. Generate the data bundle with `scripts/generate_data.py`, or otherwise make sure the working folder contains `data/reference` and `data/generated`.
-4. Run `setup.sql` from the project root or from the generated bundle root.
+4. Run `install.sql`, `load.sql`, and `validation.sql` from the project root or from the generated bundle root.
 
 Example:
-
-```bash
-mysql --local-infile=1 -u root -p < sql/setup.sql
-```
-
-To run the pieces manually:
 
 ```bash
 mysql -u root -p < sql/install.sql
@@ -65,4 +57,4 @@ It also includes stored procedures for FIFO emergency queue handling and shift v
 
 ## Notes
 
-There are no machine-specific absolute paths in the load/setup scripts. The relative `LOAD DATA LOCAL INFILE` paths are resolved from the folder where the MySQL client is started, so start MySQL from the repository root or from the generated bundle root.
+There are no machine-specific absolute paths in the load script. The relative `LOAD DATA LOCAL INFILE` paths are resolved from the folder where the MySQL client is started, so start MySQL from the repository root or from the generated bundle root.

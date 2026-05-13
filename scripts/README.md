@@ -47,10 +47,11 @@ python3 scripts/generate_data.py \
 
 The output bundle contains:
 
-- `data/reference/`: cleaned or fallback reference CSVs;
+- `data/reference/`: cleaned official reference CSVs;
 - `data/generated/`: synthetic transactional CSVs;
+- `sql/install.sql`: schema installer copied from the project;
 - `sql/load.sql`: relative-path loader for MySQL;
-- `sql/setup.sql`: portable schema + load + validation runner;
+- `sql/validation.sql`: post-load validation script copied from the project;
 - `TABLE_TO_CSV_MAP.csv`: table-to-file mapping;
 - `QUERY_COVERAGE.csv`: notes explaining how generated data supports the exercise queries;
 - `dataset_summary.json`: row-count summary.
@@ -58,13 +59,13 @@ The output bundle contains:
 ## Important Assumptions
 
 - ICD-10 and procedure catalogs should come from official source files.
-- KEN data comes from an improved/official source when available. Demo `DKEN...` rows are used only when no official KEN data can be found.
+- KEN data comes from an improved/official source. The generator fails clearly if no official KEN data can be found.
 - `icd10_ken_map.csv` is rebuilt from the official map when compatible with `ken.csv`; otherwise it is generated from the active KEN codes.
 - Procedure events are generated only from `procedure_catalog.csv`, with `place_id` chosen from a matching `operating_place.place_type`.
 - Procedure catalog codes/names come from the official procedure source; standard duration and cost are deterministic estimates by category when the source lacks clean values for every row.
 - Hospitalizations are generated without overlapping stays for the same patient or same bed.
 - Drug, active-substance, allergy, and prescription rows are validated against their reference CSVs before the bundle is accepted.
-- Drug/substance data can use EMA Article 57 if provided; otherwise the script creates demo drug data so allergy and prescription logic can still be tested.
+- Drug/substance data uses EMA Article 57 when provided. Without that official file, the medication-related CSVs remain empty.
 - The generated data is deterministic, so the same inputs, seed, and count options should produce the same result.
 
 ## Recommended Use

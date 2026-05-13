@@ -649,11 +649,60 @@ JOIN doctor d ON d.amka = pe.chief_surgeon_amka
 JOIN personnel p ON p.amka = d.amka
 JOIN operating_place op ON op.place_id = pe.place_id;
 
+/* Compatibility/reporting views used by the final Q01-Q15 query files.
+   They keep the SQL queries readable without changing the normalized tables. */
+CREATE VIEW v_shift_staff AS
+SELECT
+    ss.*,
+    YEAR(ss.shift_date) AS shift_year,
+    CONCAT(ss.first_name, ' ', ss.last_name) AS personnel_name
+FROM shift_staff ss;
 
-/* Triggers for key business rules */
+CREATE VIEW v_doctor_procedure_event AS
+SELECT
+    dp.*,
+    CONCAT(dp.first_name, ' ', dp.last_name) AS doctor_name,
+    per.age AS doctor_age,
+    YEAR(dp.start_ts) AS procedure_year,
+    (
+        SELECT GROUP_CONCAT(DISTINCT dep.department_name ORDER BY dep.department_name SEPARATOR ', ')
+        FROM doctor_department dd
+        JOIN department dep ON dep.department_id = dd.department_id
+        WHERE dd.doctor_amka = dp.doctor_amka
+    ) AS department_names
+FROM doctor_procedure dp
+JOIN personnel per ON per.amka = dp.doctor_amka;
+
+CREATE VIEW v_patient_hospitalization AS
+SELECT
+    ph.patient_amka,
+    CONCAT(ph.first_name, ' ', ph.last_name) AS patient_name,
+    ph.insurance_provider,
+    ph.hosp_id,
+    ph.department_id,
+    ph.department_name,
+    ph.admission_ts,
+    ph.discharge_ts,
+    ph.total_cost,
+    ph.icd10_code,
+    ph.icd10_description,
+    ph.ken_code,
+    ph.ken_description
+FROM patient_history ph;
 
 DELIMITER $$
 
+/* Triggers for key business rules.
+   The following trigger groups enforce business rules that cannot be expressed
+   fully with simple CHECK constraints or foreign keys: medical hierarchy,
+   medication safety, procedure scheduling, shift coverage/rest limits, and
+   automatic hospitalization cost calculation. */
+
+/* Doctor supervision:
+   - a resident must have a supervisor,
+   - a director cannot have one,
+   - a doctor cannot supervise himself/herself,
+   - circular supervision chains are rejected. */
 CREATE TRIGGER trg_doctor_supervision_bi
 BEFORE INSERT ON doctor
 FOR EACH ROW
@@ -716,6 +765,9 @@ DECLARE current_amka CHAR(11);
     END IF;
 END$$
 
+/* Medication safety:
+   a prescription is blocked when the selected drug contains an active
+   substance that appears in the patient's allergy profile. */
 CREATE TRIGGER trg_prescription_no_allergy_bi
 BEFORE INSERT ON prescription
 FOR EACH ROW /* Για πολλά perscriptions*/
@@ -750,6 +802,9 @@ BEGIN
     END IF;
 END$$
 
+/* Procedure scheduling:
+   the same operating/procedure room and the same chief surgeon cannot be used
+   by overlapping procedure events. */
 CREATE TRIGGER trg_procedure_room_overlap_bi
 BEFORE INSERT ON procedure_event /* insert of an event */
 FOR EACH ROW
@@ -806,6 +861,9 @@ BEGIN
     END IF;
 END$$
 
+/* Procedure participant scheduling:
+   the same staff member cannot be assigned to two overlapping procedures, and
+   cannot be a chief surgeon elsewhere at the same time. */
 CREATE TRIGGER trg_procedure_participant_overlap_bi /* Για να ελέγξουμε αν το προσωπικό που προσπαθούμε να προσθέσουμε ως συμμετέχοντα σε μια διαδικασία συμμετέχει ήδη σε άλλη διαδικασία που επικαλύπτεται χρονικά με την τρέχουσα ή είναι επικεφαλής χειρουργός σε άλλη διαδικασία που επικαλύπτεται χρονικά με την τρέχουσα */
 BEFORE INSERT ON procedure_participant
 FOR EACH ROW
@@ -880,6 +938,9 @@ BEGIN
     END IF;
 END$$
 
+/* Procedure catalog consistency:
+   each procedure event must be scheduled in a place whose type matches the
+   place type required by the procedure catalog. */
 CREATE TRIGGER trg_procedure_place_type_bi /* Για να ελέγξουμε αν ο τύπος του χώρου που προσπαθούμε να ορίσουμε για μια διαδικασία ταιριάζει με τον απαιτούμενο τύπο χώρου της διαδικασίας */
 BEFORE INSERT ON procedure_event
 FOR EACH ROW
@@ -926,6 +987,9 @@ BEGIN
     END IF;
 END$$
 
+/* Procedure role consistency:
+   the chief surgeon is stored on procedure_event and must not be duplicated as
+   a participant; administrative staff are not medical procedure participants. */
 CREATE TRIGGER trg_procedure_participant_not_chief_bi /* Για να ελέγξουμε αν ο συμμετέχων που προσπαθούμε να προσθέσουμε είναι ο ίδιος με τον επικεφαλής χειρουργό της διαδικασίας, κάτι που απαγορεύεται */
 BEFORE INSERT ON procedure_participant
 FOR EACH ROW
@@ -966,6 +1030,9 @@ BEGIN
 END$$
 
 
+/* Monthly workload limits:
+   doctors, nurses, and administrative staff have different maximum numbers of
+   assignments per calendar month. */
 CREATE TRIGGER trg_shift_monthly_limits_bi
 BEFORE INSERT ON shift_assignment
 FOR EACH ROW
@@ -1054,6 +1121,9 @@ BEGIN
 END$$  
 
 
+/* Rest-time rule:
+   a staff member must have at least 8 hours between the end of one shift and
+   the start of the next; night shifts are treated as ending the next day. */
 CREATE TRIGGER trg_shift_rest_bi
 BEFORE INSERT ON shift_assignment
 FOR EACH ROW
@@ -1159,6 +1229,8 @@ BEGIN
 
 END$$
 
+/* Night-shift fatigue rule:
+   a staff member cannot be assigned more than 3 consecutive night shifts. */
 CREATE TRIGGER trg_night_shifts_limit_bi
 BEFORE INSERT ON shift_assignment
 FOR EACH ROW
@@ -1221,6 +1293,9 @@ BEGIN
     END IF;
 END$$
 
+/* Hospitalization cost rule:
+   when discharge data changes, the total cost is recalculated from the KEN
+   base cost and extra daily cost after the mean duration. */
 CREATE TRIGGER trg_extra_hospitalization_cost_bu
 BEFORE UPDATE ON hospitalization
 FOR EACH ROW
@@ -1247,6 +1322,9 @@ BEGIN
 
 END$$
 
+/* Valid shift composition:
+   a shift can be marked VALID only if it has enough doctors, nurses, and
+   administrative staff for coverage. */
 CREATE PROCEDURE shift_composition(IN shiftID BIGINT)
 BEGIN
     DECLARE doc_cnt        INT;
@@ -1277,6 +1355,9 @@ BEGIN
     END IF;
 END$$  
 
+/* Emergency FIFO:
+   picks the next waiting emergency visit by priority first and arrival time
+   second, then marks that visit as called. */
 CREATE PROCEDURE FIFO(OUT patientAMKA CHAR(11))
 BEGIN
     DECLARE v_visit_id  BIGINT;
@@ -1294,6 +1375,9 @@ BEGIN
     END IF;
 END$$
 
+/* Resident supervision in shifts:
+   a VALID shift cannot contain residents unless at least one Consultant A or
+   Director is also assigned to the same shift. */
 CREATE PROCEDURE shift_resident_supervisor(IN shiftID BIGINT)
 BEGIN
     DECLARE has_resident INT DEFAULT 0;
@@ -1320,6 +1404,8 @@ BEGIN
     END IF;
 END$$
 
+/* Final shift validation gate:
+   business checks run at the moment a shift changes from PROCESSING to VALID. */
 CREATE TRIGGER trg_shift_validation_bu
 BEFORE UPDATE ON department_shift
 FOR EACH ROW
@@ -1331,8 +1417,6 @@ BEGIN
 END$$
 
 DELIMITER ;
-
-
 
 
 
