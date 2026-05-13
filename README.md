@@ -246,6 +246,8 @@ The generated bundle also contains `TABLE_TO_CSV_MAP.csv`, `QUERY_COVERAGE.csv`,
 
 The problem-detection queries should return zero rows after a valid load.
 
+Medication note: if the validation output shows `drug`, `active_substance`, `drug_active_substance`, `patient_allergy`, and `prescription` with zero rows, that is expected only for the current official-only dataset without an EMA Article 57 workbook. It is not a `LOAD DATA` path failure. To populate those tables, provide the official EMA workbook and regenerate the data with `--ema-xlsx`.
+
 ## Final Submission Checklist
 
 The assignment PDF asks for the following final structure:

@@ -28,6 +28,36 @@ UNION ALL SELECT 'patient_allergy', COUNT(*) FROM patient_allergy
 UNION ALL SELECT 'prescription', COUNT(*) FROM prescription
 UNION ALL SELECT 'hospitalization_evaluation', COUNT(*) FROM hospitalization_evaluation;
 
+-- Medication data policy notice.
+-- A zero count here is acceptable only when the official EMA Article 57
+-- workbook was not supplied during data generation. In that case the project
+-- intentionally keeps medication tables empty instead of loading unofficial
+-- demo medication rows.
+SELECT 'MEDICATION_DATA_NOTICE' AS check_name,
+       'drug/active_substance/prescription tables are empty because no official EMA Article 57 workbook was supplied. This is not a LOAD DATA failure.' AS message
+WHERE (SELECT COUNT(*) FROM drug) = 0
+  AND (SELECT COUNT(*) FROM active_substance) = 0
+  AND (SELECT COUNT(*) FROM prescription) = 0;
+
+-- If one medication table has data but the related tables do not, that is a
+-- real consistency problem and should be fixed before submission.
+SELECT 'MEDICATION_TABLE_MISMATCH' AS check_name,
+       (SELECT COUNT(*) FROM drug) AS drug_rows,
+       (SELECT COUNT(*) FROM active_substance) AS active_substance_rows,
+       (SELECT COUNT(*) FROM drug_active_substance) AS drug_active_substance_rows,
+       (SELECT COUNT(*) FROM prescription) AS prescription_rows
+WHERE (
+    ((SELECT COUNT(*) FROM drug) > 0)
+    OR ((SELECT COUNT(*) FROM active_substance) > 0)
+    OR ((SELECT COUNT(*) FROM drug_active_substance) > 0)
+    OR ((SELECT COUNT(*) FROM prescription) > 0)
+)
+AND (
+    ((SELECT COUNT(*) FROM drug) = 0)
+    OR ((SELECT COUNT(*) FROM active_substance) = 0)
+    OR ((SELECT COUNT(*) FROM drug_active_substance) = 0)
+);
+
 -- The following checks should return zero rows.
 
 -- Hospitalizations should reference an existing patient.
