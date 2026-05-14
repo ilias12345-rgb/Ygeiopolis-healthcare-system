@@ -52,6 +52,18 @@ Safest terminal runner:
 bash run_database.sh
 ```
 
+Windows Command Prompt runner:
+
+```bat
+run_database_windows.bat
+```
+
+If your MySQL user is not `root`, pass it as the first argument:
+
+```bat
+run_database_windows.bat my_mysql_user
+```
+
 The script verifies that it is running from the repository root and then executes the same SQL files below.
 
 Manual equivalent:
@@ -164,6 +176,7 @@ The Streamlit app is optional. The database can always be installed and queried 
 - Confirm the setting with `mysql -u root -p -e "SHOW GLOBAL VARIABLES LIKE 'local_infile';"`.
 - If a CSV file is reported as missing, confirm that the command is being run from the repository root.
 - `load.sql` intentionally uses relative paths such as `data/reference/icd10_diagnosis.csv` and `data/generated/patient.csv`.
+- If Windows reports `ERROR 1644 (45000): A director doctor cannot have a supervisor` during `load.sql`, the checkout probably converted CSV files to CRLF before the repository line-ending rules were applied. Pull the latest version and use a fresh clone, or run `git config core.autocrlf false` and re-check out the files before loading again.
 
 ## MySQL Workbench Note
 

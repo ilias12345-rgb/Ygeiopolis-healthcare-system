@@ -78,11 +78,13 @@ LINES TERMINATED BY '\n'
 IGNORE 1 LINES
 (@amka, @license_number, @specialization, @doctor_rank, @supervisor_amka)
 SET
-    amka = @amka,
-    license_number = @license_number,
-    specialization = @specialization,
-    doctor_rank = @doctor_rank,
-    supervisor_amka = NULLIF(@supervisor_amka, '');
+    amka = TRIM(TRAILING '\r' FROM @amka),
+    license_number = TRIM(TRAILING '\r' FROM @license_number),
+    specialization = TRIM(TRAILING '\r' FROM @specialization),
+    doctor_rank = TRIM(TRAILING '\r' FROM @doctor_rank),
+    -- Windows checkouts can leave a trailing carriage return on the final CSV column.
+    -- Trimming it keeps empty director supervisors as NULL and preserves the trigger rule.
+    supervisor_amka = NULLIF(TRIM(TRAILING '\r' FROM @supervisor_amka), '');
 
 LOAD DATA LOCAL INFILE 'data/generated/department.csv'
 INTO TABLE department
