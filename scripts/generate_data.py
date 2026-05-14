@@ -607,7 +607,19 @@ def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | No
 
     # Drugs / active substances
     if ema_xlsx and ema_xlsx.exists():
-        ema = pd.read_excel(ema_xlsx)
+        # EMA Article 57 exports include title/metadata rows before the real
+        # table header. Detect the header row instead of assuming row 1, so the
+        # official workbook can be used directly.
+        ema_probe = pd.read_excel(ema_xlsx, header=None, nrows=60)
+        ema_header_row = None
+        for idx, row in ema_probe.iterrows():
+            labels = [str(v).strip().lower() for v in row.tolist() if pd.notna(v)]
+            if any("product name" in v for v in labels) and any("active substance" in v for v in labels):
+                ema_header_row = idx
+                break
+        if ema_header_row is None:
+            raise ValueError("Could not locate the Article 57 product-data header row in EMA workbook.")
+        ema = pd.read_excel(ema_xlsx, header=ema_header_row).dropna(how="all")
         # best-effort column detection
         cols_lower = {str(c).strip().lower(): c for c in ema.columns}
         drug_col = None
@@ -624,6 +636,7 @@ def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | No
         d["drug_name"] = d["drug_name"].map(normalize_space)
         d["active_substance_raw"] = d["active_substance_raw"].map(normalize_space)
         d = d[d["drug_name"].notna() & d["active_substance_raw"].notna()].drop_duplicates().reset_index(drop=True)
+        d["drug_name"] = d["drug_name"].str.replace("\\", "/", regex=False).str.slice(0, 255)
         d["drug_id"] = ["EMA%07d" % (i + 1) for i in range(len(d))]
         drug = d[["drug_id", "drug_name"]].drop_duplicates("drug_id")
         substances = []
@@ -631,7 +644,7 @@ def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | No
         substance_map = {}
         next_sid = 1
         for row in d.itertuples(index=False):
-            parts = [normalize_space(x) for x in re.split(r"\|", row.active_substance_raw)]
+            parts = [normalize_space(x).replace("\\", "/")[:255] for x in re.split(r"\|", row.active_substance_raw)]
             for s in [p for p in parts if p]:
                 if s not in substance_map:
                     substance_map[s] = next_sid

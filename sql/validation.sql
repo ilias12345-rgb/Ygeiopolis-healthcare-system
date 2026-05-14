@@ -28,16 +28,15 @@ UNION ALL SELECT 'patient_allergy', COUNT(*) FROM patient_allergy
 UNION ALL SELECT 'prescription', COUNT(*) FROM prescription
 UNION ALL SELECT 'hospitalization_evaluation', COUNT(*) FROM hospitalization_evaluation;
 
--- Medication data policy notice.
--- A zero count here is acceptable only when the official EMA Article 57
--- workbook was not supplied during data generation. In that case the project
--- intentionally keeps medication tables empty instead of loading unofficial
--- demo medication rows.
-SELECT 'MEDICATION_DATA_NOTICE' AS check_name,
-       'drug/active_substance/prescription tables are empty because no official EMA Article 57 workbook was supplied. This is not a LOAD DATA failure.' AS message
+-- The final submitted dataset includes official EMA Article 57 medication
+-- references. This check should return zero rows.
+SELECT 'MEDICATION_DATA_MISSING' AS check_name,
+       'Medication reference or prescription rows are missing. The final dataset should include official EMA-derived medication data.' AS message
 WHERE (SELECT COUNT(*) FROM drug) = 0
-  AND (SELECT COUNT(*) FROM active_substance) = 0
-  AND (SELECT COUNT(*) FROM prescription) = 0;
+   OR (SELECT COUNT(*) FROM active_substance) = 0
+   OR (SELECT COUNT(*) FROM drug_active_substance) = 0
+   OR (SELECT COUNT(*) FROM patient_allergy) = 0
+   OR (SELECT COUNT(*) FROM prescription) = 0;
 
 -- If one medication table has data but the related tables do not, that is a
 -- real consistency problem and should be fixed before submission.

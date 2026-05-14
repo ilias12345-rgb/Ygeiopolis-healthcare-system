@@ -114,19 +114,14 @@ After a successful load, the main operational tables should be populated. The cu
 | procedure_catalog | 8740 |
 | procedure_event | 500 |
 | procedure_participant | 1244 |
+| drug | 95764 |
+| active_substance | 12086 |
+| drug_active_substance | 100057 |
+| patient_allergy | 136 |
+| prescription | 1000 |
 | hospitalization_evaluation | 882 |
 
-The following medication/allergy tables are expected to be `0` in this submitted dataset:
-
-| Table | Expected rows | Reason |
-| --- | ---: | --- |
-| drug | 0 | No official EMA Article 57 workbook was supplied. |
-| active_substance | 0 | No official EMA Article 57 workbook was supplied. |
-| drug_active_substance | 0 | No official EMA Article 57 workbook was supplied. |
-| patient_allergy | 0 | Allergy rows depend on official active substances. |
-| prescription | 0 | Prescription rows depend on official drug rows. |
-
-This is intentional. The project does not insert fake medication data because these rows should come from the official EMA workbook. `validation.sql` prints `MEDICATION_DATA_NOTICE` to document this policy.
+Medication data is included in the final CSVs. The drug, active-substance, and drug-substance reference rows come from the official EMA Article 57 workbook. Patient allergies and prescriptions are generated from those official reference rows so the database can demonstrate allergy checks and prescription queries without using fake medication names.
 
 ## Optional Regeneration
 
@@ -214,7 +209,7 @@ The Streamlit app is optional. The database can always be installed and queried 
 - `load.sql` intentionally uses relative paths such as `data/reference/icd10_diagnosis.csv` and `data/generated/patient.csv`.
 - On Windows, prefer `run_database_windows.bat`; it normalizes CSV line endings before loading. This avoids hidden `\r` characters in foreign keys, check values, and nullable columns.
 - If Windows reports `ERROR 1644 (45000): A director doctor cannot have a supervisor` or validation shows many zero-count clinical tables after `load.sql`, pull the latest version and run `run_database_windows.bat` from a fresh clone.
-- Zero rows in `drug`, `active_substance`, `drug_active_substance`, `patient_allergy`, and `prescription` are expected for this included dataset. Zero rows in operational tables such as `patient`, `hospitalization`, `lab_test`, or `procedure_event` indicate a failed load.
+- Zero rows in operational tables such as `patient`, `hospitalization`, `lab_test`, `procedure_event`, `drug`, or `prescription` indicate a failed or incomplete load.
 
 ## MySQL Workbench Note
 
@@ -255,7 +250,7 @@ Important business rules are enforced in SQL:
 | Patient gender | Generated patient gender uses `MALE` and `FEMALE`; the vol2 schema stores it as `VARCHAR`. |
 | Reference data | ICD-10, KEN, medical procedure, and drug reference rows should come from the official files mentioned in the assignment whenever those files are available. |
 | Synthetic data | Operational rows such as patients, visits, hospitalizations, shifts, evaluations, and images are generated synthetically but are designed to satisfy the assignment query requirements. |
-| EMA drugs | Drug, active-substance, allergy, and prescription rows are loaded only from an official EMA Article 57 workbook. If that file is not provided, these CSVs remain empty so the final database contains no unofficial medication data. |
+| EMA drugs | Drug, active-substance, and drug-substance rows in the submitted CSVs come from the official EMA Article 57 workbook. Patient allergies and prescriptions are generated only from those official medication references. |
 | Procedure catalog | Procedure codes and names come from the official procedure catalog. The vol2 schema stores the category and required place type. |
 | KEN costing | Total hospitalization cost equals the KEN base cost plus extra daily cost only for days beyond the KEN mean duration. |
 | Emergency queue | Emergency visits are served by urgency level first, then FIFO by arrival timestamp for equal urgency. |
@@ -270,7 +265,9 @@ The generator creates a deterministic dataset with enough rows for the requested
 - 500 patients;
 - 1200 hospitalizations;
 - 15 departments;
-- 1000 prescriptions when an official EMA Article 57 workbook is supplied; otherwise medication/allergy tables stay empty;
+- more than 95,000 official EMA drug rows;
+- more than 12,000 official active-substance rows;
+- 1000 prescriptions generated from official EMA drug references;
 - at least 10 operating/procedure places;
 - up to 500 procedure events, depending on room/staff availability;
 - 800 lab tests;
@@ -310,7 +307,7 @@ The generated bundle also contains `TABLE_TO_CSV_MAP.csv`, `QUERY_COVERAGE.csv`,
 
 The problem-detection queries should return zero rows after a valid load.
 
-Medication note: if the validation output shows `drug`, `active_substance`, `drug_active_substance`, `patient_allergy`, and `prescription` with zero rows, that is expected only for the current official-only dataset without an EMA Article 57 workbook. It is not a `LOAD DATA` path failure. To populate those tables, provide the official EMA workbook and regenerate the data with `--ema-xlsx`.
+Medication note: the submitted CSVs include official EMA Article 57 drug and active-substance references. If validation shows `drug`, `active_substance`, `drug_active_substance`, `patient_allergy`, or `prescription` with zero rows, the load did not complete correctly.
 
 ## Final Submission Checklist
 

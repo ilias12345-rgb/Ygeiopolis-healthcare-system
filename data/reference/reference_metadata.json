@@ -3,6 +3,5 @@
   "note": "ICD-10, KEN, ICD10-KEN, and procedure references are cleaned from the best available official/improved sources. Demo reference rows are not generated for the final dataset.",
   "ken_mode": "official_csv",
   "icd10_ken_mode": "official",
-  "ema_mode": "missing",
-  "note_drugs": "EMA Article 57 file was not provided. Drug, active-substance, allergy, and prescription CSVs are intentionally empty until an official EMA export is supplied."
+  "ema_mode": "official"
 }
