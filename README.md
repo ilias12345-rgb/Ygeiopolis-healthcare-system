@@ -42,31 +42,39 @@ The recommended grading path uses the CSV files already included in this reposit
 Install MySQL/MariaDB first, then clone or download this final branch and run from the repository root:
 
 ```bash
-git clone -b final-safe-submission https://github.com/ilias12345-rgb/Ygeiopolis-healthcare-system.git
+git clone -b main https://github.com/ilias12345-rgb/Ygeiopolis-healthcare-system.git
 cd Ygeiopolis-healthcare-system
 ```
 
-Safest terminal runner:
+### Windows
 
-```bash
-bash run_database.sh
-```
-
-Windows Command Prompt runner:
+Use Command Prompt from the repository root:
 
 ```bat
 run_database_windows.bat
 ```
 
-If your MySQL user is not `root`, pass it as the first argument:
+If MySQL uses a user other than `root`, pass that user as the first argument:
 
 ```bat
 run_database_windows.bat my_mysql_user
 ```
 
-The script verifies that it is running from the repository root, normalizes CSV line endings for Windows, and then executes the same SQL files below.
+The Windows script verifies that it is running from the repository root, normalizes CSV line endings for MySQL, enables `local_infile`, installs the schema, loads the included data, and runs validation.
 
-Manual equivalent:
+### macOS / Linux
+
+Use Terminal from the repository root:
+
+```bash
+bash run_database.sh
+```
+
+The macOS/Linux script verifies that it is running from the repository root, enables `local_infile`, installs the schema, loads the included data, and runs validation.
+
+### Manual SQL Commands
+
+The runner scripts execute these commands:
 
 ```bash
 mysql -u root -p -e "SET GLOBAL local_infile = 1;"
@@ -76,21 +84,49 @@ mysql --local-infile=1 -u root -p < sql/load.sql
 mysql -u root -p < sql/validation.sql
 ```
 
-If the local MySQL user has no password, omit `-p`:
-
-```bash
-mysql -u root -e "SET GLOBAL local_infile = 1;"
-mysql -u root -e "SHOW GLOBAL VARIABLES LIKE 'local_infile';"
-mysql -u root < sql/install.sql
-mysql --local-infile=1 -u root < sql/load.sql
-mysql -u root < sql/validation.sql
-```
+If the local MySQL user has no password, omit `-p`.
 
 The scripts do three things:
 
 1. `install.sql` creates the `yg_eupolis_hospital` database and all schema objects.
 2. `load.sql` loads the included CSV data from relative paths under `data/reference` and `data/generated`.
 3. `validation.sql` prints row counts and runs problem-detection queries. The problem-detection queries should return zero rows.
+
+### Expected Validation Counts
+
+After a successful load, the main operational tables should be populated. The current included dataset is expected to show approximately these counts:
+
+| Table | Expected rows |
+| --- | ---: |
+| department | 15 |
+| personnel | 495 |
+| doctor | 135 |
+| nurse | 270 |
+| administrative_staff | 90 |
+| patient | 500 |
+| bed | 390 |
+| department_shift | 315 |
+| shift_assignment | 3465 |
+| emergency_visit | 1500 |
+| hospitalization | 1200 |
+| hospitalization_doctor | 2385 |
+| lab_test | 800 |
+| procedure_catalog | 8740 |
+| procedure_event | 500 |
+| procedure_participant | 1244 |
+| hospitalization_evaluation | 882 |
+
+The following medication/allergy tables are expected to be `0` in this submitted dataset:
+
+| Table | Expected rows | Reason |
+| --- | ---: | --- |
+| drug | 0 | No official EMA Article 57 workbook was supplied. |
+| active_substance | 0 | No official EMA Article 57 workbook was supplied. |
+| drug_active_substance | 0 | No official EMA Article 57 workbook was supplied. |
+| patient_allergy | 0 | Allergy rows depend on official active substances. |
+| prescription | 0 | Prescription rows depend on official drug rows. |
+
+This is intentional. The project does not insert fake medication data because these rows should come from the official EMA workbook. `validation.sql` prints `MEDICATION_DATA_NOTICE` to document this policy.
 
 ## Optional Regeneration
 
@@ -178,6 +214,7 @@ The Streamlit app is optional. The database can always be installed and queried 
 - `load.sql` intentionally uses relative paths such as `data/reference/icd10_diagnosis.csv` and `data/generated/patient.csv`.
 - On Windows, prefer `run_database_windows.bat`; it normalizes CSV line endings before loading. This avoids hidden `\r` characters in foreign keys, check values, and nullable columns.
 - If Windows reports `ERROR 1644 (45000): A director doctor cannot have a supervisor` or validation shows many zero-count clinical tables after `load.sql`, pull the latest version and run `run_database_windows.bat` from a fresh clone.
+- Zero rows in `drug`, `active_substance`, `drug_active_substance`, `patient_allergy`, and `prescription` are expected for this included dataset. Zero rows in operational tables such as `patient`, `hospitalization`, `lab_test`, or `procedure_event` indicate a failed load.
 
 ## MySQL Workbench Note
 
