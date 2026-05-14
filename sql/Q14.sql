@@ -4,7 +4,7 @@ WITH yearly_admissions AS (
     GROUP BY icd10_code, icd10_description, YEAR(admission_ts)
     HAVING COUNT(*) >= 5
 )
-SELECT y1.icd10_code, y1.icd10_description, y1.yr AS yr1, y2.yr AS yr2, y1.admissions
+SELECT y1.icd10_code, y1.icd10_description, y1.yr AS year1, y2.yr AS year2, y1.admissions
 FROM yearly_admissions y1
 JOIN yearly_admissions y2 ON y1.icd10_code = y2.icd10_code
     AND y1.yr = y2.yr + 1
