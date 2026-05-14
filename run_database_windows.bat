@@ -21,6 +21,10 @@ if not exist "data\generated\doctor.csv" (
   exit /b 1
 )
 
+echo Normalizing CSV line endings for MySQL LOAD DATA...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; Get-ChildItem -Path 'data' -Recurse -Filter '*.csv' | ForEach-Object { $p=$_.FullName; $text=[System.IO.File]::ReadAllText($p); $text=$text -replace \"`r`n\", \"`n\" -replace \"`r\", \"`n\"; [System.IO.File]::WriteAllText($p, $text, [System.Text.UTF8Encoding]::new($false)) }"
+if errorlevel 1 exit /b 1
+
 echo Enabling MySQL local_infile...
 mysql -u %MYSQL_USER% -e "SET GLOBAL local_infile = 1;"
 if errorlevel 1 exit /b 1
