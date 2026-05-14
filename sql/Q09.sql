@@ -11,4 +11,5 @@ AND total_days IN (
     FROM patient_totals
     GROUP BY total_days
     HAVING COUNT(*) > 1
-);
+)
+ORDER BY total_days;
