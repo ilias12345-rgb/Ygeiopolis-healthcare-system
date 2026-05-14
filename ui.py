@@ -465,26 +465,31 @@ def render_table(title: str, dataframe: pd.DataFrame, height: int = 300) -> None
 
 
 def render_query_inventory() -> None:
-    tiles = []
+    rows = []
     for query_file in query_files():
-        sql_ready = bool(read_query(query_file).strip())
-        output_ready = query_file.output_path.exists() and query_file.output_path.stat().st_size > 0
-        status = "SQL ready" if sql_ready else "Blank SQL"
-        output = "Output saved" if output_ready else "No output"
-        tiles.append(
-            f"""
-            <div class="query-status">
-                <strong>{escape(query_file.name)}</strong>
-                <span>{status}</span>
-                <span>{output}</span>
-            </div>
-            """
+        sql_body = read_query(query_file).strip()
+        sql_ready = bool(sql_body) and not sql_body.startswith("-- TODO")
+        output_text = query_file.output_path.read_text(encoding="utf-8").strip() if query_file.output_path.exists() else ""
+        output_ready = bool(output_text) and not output_text.startswith("TODO:")
+        rows.append(
+            {
+                "Query": query_file.name,
+                "SQL": "Ready" if sql_ready else "TODO",
+                "Output": "Saved" if output_ready else "Pending",
+            }
         )
 
-    st.markdown(
-        '<div class="query-status-grid">' + "".join(tiles) + "</div>",
-        unsafe_allow_html=True,
-    )
+    status_df = pd.DataFrame(rows)
+    ready_count = int((status_df["SQL"] == "Ready").sum())
+    saved_count = int((status_df["Output"] == "Saved").sum())
+    pending_count = len(status_df) - saved_count
+
+    metric_cols = st.columns(3)
+    metric_cols[0].metric("Queries Ready", f"{ready_count}/15")
+    metric_cols[1].metric("Outputs Saved", f"{saved_count}/15")
+    metric_cols[2].metric("Pending Outputs", pending_count)
+    st.progress(saved_count / max(len(status_df), 1))
+    st.dataframe(status_df, width="stretch", hide_index=True, height=220)
 
 
 SET_PARAMETER_PATTERN = re.compile(r"(?im)^\s*SET\s+(@[A-Za-z0-9_]+)\s*=\s*(.+?)\s*;\s*$")
@@ -718,11 +723,27 @@ def render_dashboard(config: DbConfig) -> None:
         config,
     )
 
+    staff_mix = load_dataframe(
+        f"""
+        SELECT
+            personnel_type AS Staff_Type,
+            COUNT(*) AS Assignments
+        FROM shift_staff
+        WHERE shift_date = '{date_literal}' {shift_dept_and}
+        GROUP BY personnel_type
+        ORDER BY FIELD(personnel_type, 'DOCTOR', 'NURSE', 'ADMIN');
+        """,
+        config,
+    )
+
     col_a, col_b = st.columns([1.15, 0.85])
     with col_a:
         render_table("Bed And Admission Snapshot", bed_census, height=330)
     with col_b:
         render_table("Shift Coverage", shift_coverage, height=330)
+        if not staff_mix.empty:
+            st.markdown('<div class="section-label">Staff Mix</div>', unsafe_allow_html=True)
+            st.bar_chart(staff_mix.set_index("Staff_Type"), height=220)
 
     procedures = load_dataframe(
         f"""

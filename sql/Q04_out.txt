@@ -1,1 +1,1 @@
-TODO: Run Q04.sql after final load and save output here.
+TODO: Q04.sql does not contain a final runnable SQL query yet.

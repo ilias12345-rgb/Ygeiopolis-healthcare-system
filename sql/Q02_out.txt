@@ -1,1 +1,10 @@
-TODO: Run Q02.sql after final load and save output here.
+doctor_amka            doctor_name specialization  doctor_rank    department_names had_shift_this_year  shifts_this_year  surgical_procedures_as_chief
+10000000003       Christos Ioannou     CARDIOLOGY CONSULTANT_A          Cardiology                 YES                 7                             5
+10000000004    Georgia Kostopoulos     CARDIOLOGY CONSULTANT_B          Cardiology                 YES                 7                             5
+10000000000      Giorgos Theodorou     CARDIOLOGY     DIRECTOR          Cardiology                 YES                 7                             5
+10000000002     Katerina Dimitriou     CARDIOLOGY CONSULTANT_A          Cardiology                 YES                 7                             5
+10000000007 Evangelia Konstantinou     CARDIOLOGY     RESIDENT          Cardiology                 YES                 7                             4
+10000000006  Christos Konstantinou     CARDIOLOGY CONSULTANT_B          Cardiology                 YES                 7                             3
+10000000005         Petros Ioannou     CARDIOLOGY CONSULTANT_B          Cardiology                 YES                 7                             3
+10000000001    Spyros Konstantinou     CARDIOLOGY CONSULTANT_A Cardiology, Surgery                 YES                 7                             2
+10000000008        Vasilis Ioannou     CARDIOLOGY     RESIDENT          Cardiology                 YES                 7                             2

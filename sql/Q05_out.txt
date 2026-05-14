@@ -1,1 +1,4 @@
-TODO: Run Q05.sql after final load and save output here.
+doctor_amka         doctor_name  doctor_age  specialization doctor_rank department_names  surgical_procedures_as_chief
+10000000052     Giorgos Ioannou          34     ORTHOPEDICS    RESIDENT      Orthopedics                             9
+10000000044 Ioanna Konstantinou          27       NEUROLOGY    RESIDENT        Neurology                             9
+10000000016 Vasilis Kostopoulos          33 GENERAL_SURGERY    RESIDENT          Surgery                             9
