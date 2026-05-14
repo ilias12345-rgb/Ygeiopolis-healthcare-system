@@ -39,11 +39,24 @@ The database models hospital departments, staff, shifts, emergency triage, patie
 
 The recommended grading path uses the CSV files already included in this repository. The grader should not need to run `scripts/generate_data.py`.
 
-Install MySQL/MariaDB first, then clone or download the repository and run the following commands from the repository root:
+Install MySQL/MariaDB first, then clone or download this final branch and run from the repository root:
 
 ```bash
-git clone https://github.com/ilias12345-rgb/Ygeiopolis-healthcare-system.git
+git clone -b final-safe-submission https://github.com/ilias12345-rgb/Ygeiopolis-healthcare-system.git
 cd Ygeiopolis-healthcare-system
+```
+
+Safest terminal runner:
+
+```bash
+bash run_database.sh
+```
+
+The script verifies that it is running from the repository root and then executes the same SQL files below.
+
+Manual equivalent:
+
+```bash
 mysql -u root -p -e "SET GLOBAL local_infile = 1;"
 mysql -u root -p -e "SHOW GLOBAL VARIABLES LIKE 'local_infile';"
 mysql -u root -p < sql/install.sql

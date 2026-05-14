@@ -19,10 +19,13 @@ This folder contains the database-facing part of the Ygeiopolis Healthcare Syste
 Example:
 
 ```bash
+cd Ygeiopolis-healthcare-system
 mysql -u root -p < sql/install.sql
 mysql --local-infile=1 -u root -p < sql/load.sql
-mysql -u root -p yg_eupolis_hospital < sql/validation.sql
+mysql -u root -p < sql/validation.sql
 ```
+
+You can also use the root helper script: `bash run_database.sh`.
 
 ## Schema Areas
 

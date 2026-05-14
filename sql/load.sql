@@ -1,5 +1,8 @@
--- Robust generated loader. Run from the bundle/project root.
+-- Robust generated loader. Run from the repository root.
 -- Example: mysql --local-infile=1 -u root -p < sql/load.sql
+-- Important: LOAD DATA LOCAL INFILE paths below are relative to the current
+-- terminal working directory, not necessarily to this SQL file's location.
+-- Therefore run the command from the repository root where data/ exists.
 USE yg_eupolis_hospital;
 SET FOREIGN_KEY_CHECKS = 1;
 
