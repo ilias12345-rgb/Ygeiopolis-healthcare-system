@@ -43,46 +43,107 @@ def apply_theme() -> None:
         """
         <style>
         :root {
-            --bg: #f5f7fb;
-            --panel: #ffffff;
-            --panel-soft: #f8fafc;
-            --text: #142033;
-            --muted: #64748b;
-            --border: #dbe4ee;
-            --brand: #0f766e;
-            --brand-2: #2563eb;
+            --bg: #edf3fb;
+            --bg-deep: #dbeafe;
+            --panel: #f9fbff;
+            --panel-soft: #edf6ff;
+            --panel-blue: #e7f0ff;
+            --text: #102033;
+            --muted: #5f7087;
+            --border: #c8d8ea;
+            --brand: #1d4ed8;
+            --brand-2: #0f766e;
+            --nav: #0b1f3a;
+            --nav-soft: #12345b;
             --ok: #15803d;
             --warn: #b7791f;
             --critical: #b91c1c;
-            --shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
+            --shadow: 0 14px 36px rgba(15, 42, 82, 0.10);
         }
         .stApp {
-            background: linear-gradient(180deg, #f7fafc 0%, var(--bg) 100%);
+            background:
+                radial-gradient(circle at top left, rgba(29, 78, 216, 0.22), transparent 28rem),
+                radial-gradient(circle at top right, rgba(15, 118, 110, 0.14), transparent 24rem),
+                linear-gradient(180deg, #f4f8ff 0%, var(--bg) 46%, #eaf1fb 100%);
             color: var(--text);
         }
+        .stApp::before {
+            background-image: url("data:image/svg+xml,%3Csvg width='720' height='520' viewBox='0 0 720 520' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M360 54L522 112V246C522 351 451 442 360 474C269 442 198 351 198 246V112L360 54Z' stroke='%231d4ed8' stroke-width='20'/%3E%3Cpath d='M264 284H320L345 218L384 338L417 250H488' stroke='%230f766e' stroke-width='18' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M360 150V218M326 184H394' stroke='%231d4ed8' stroke-width='18' stroke-linecap='round'/%3E%3Ccircle cx='360' cy='260' r='202' stroke='%230ea5e9' stroke-width='4' stroke-dasharray='10 18'/%3E%3C/svg%3E");
+            background-position: right 5vw top 12vh;
+            background-repeat: no-repeat;
+            background-size: min(54vw, 720px) auto;
+            content: "";
+            inset: 0;
+            opacity: 0.075;
+            pointer-events: none;
+            position: fixed;
+            z-index: 0;
+        }
+        .stApp > header,
+        .stApp [data-testid="stAppViewContainer"],
+        .stApp [data-testid="stSidebar"] {
+            position: relative;
+            z-index: 1;
+        }
+        .stApp [data-testid="stAppViewContainer"]::after {
+            background:
+                linear-gradient(90deg, rgba(29,78,216,0.08) 1px, transparent 1px),
+                linear-gradient(180deg, rgba(29,78,216,0.08) 1px, transparent 1px);
+            background-size: 44px 44px;
+            content: "";
+            inset: 0;
+            opacity: 0.18;
+            pointer-events: none;
+            position: fixed;
+            z-index: -1;
+        }
         [data-testid="stSidebar"] {
-            background: #ffffff;
-            border-right: 1px solid var(--border);
+            background:
+                linear-gradient(180deg, var(--nav) 0%, #0e2747 48%, #0f314f 100%);
+            border-right: 1px solid rgba(255,255,255,0.08);
         }
         [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
             padding-top: 1.1rem;
+        }
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] p,
+        [data-testid="stSidebar"] span {
+            color: rgba(255,255,255,0.78);
+        }
+        [data-testid="stSidebar"] input {
+            background: rgba(255,255,255,0.08);
+            border-color: rgba(255,255,255,0.16);
+            color: #ffffff;
+        }
+        [data-testid="stSidebar"] div[role="radiogroup"] label {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid transparent;
+            border-radius: 8px;
+            margin: 0.12rem 0;
+            padding: 0.35rem 0.45rem;
+        }
+        [data-testid="stSidebar"] div[role="radiogroup"] label:hover {
+            background: rgba(255,255,255,0.08);
+            border-color: rgba(255,255,255,0.14);
         }
         h1, h2, h3 { color: var(--text); letter-spacing: 0; }
         h1 { font-size: 1.65rem; margin: 0; }
         h2 { font-size: 1.16rem; margin-top: 1.2rem; }
         .topbar {
             align-items: center;
-            background: rgba(255,255,255,0.88);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            box-shadow: var(--shadow);
+            background:
+                linear-gradient(135deg, rgba(255,255,255,0.96), rgba(232,241,255,0.92));
+            border: 1px solid rgba(79, 116, 166, 0.22);
+            border-left: 5px solid var(--brand);
+            border-radius: 12px;
+            box-shadow: 0 18px 42px rgba(16, 45, 88, 0.10);
             display: flex;
             justify-content: space-between;
             margin-bottom: 1rem;
             padding: 0.95rem 1.05rem;
         }
         .eyebrow {
-            color: var(--brand);
+            color: #1d4ed8;
             font-size: 0.72rem;
             font-weight: 800;
             letter-spacing: 0.08em;
@@ -94,10 +155,12 @@ def apply_theme() -> None:
             text-align: right;
         }
         .kpi {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            box-shadow: var(--shadow);
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.98), rgba(238,246,255,0.96));
+            border: 1px solid rgba(96, 132, 180, 0.22);
+            border-top: 3px solid rgba(29, 78, 216, 0.72);
+            border-radius: 12px;
+            box-shadow: 0 14px 34px rgba(20, 54, 105, 0.09);
             min-height: 92px;
             padding: 0.85rem 0.95rem;
         }
@@ -126,8 +189,8 @@ def apply_theme() -> None:
             font-weight: 800;
             padding: 0.18rem 0.55rem;
         }
-        .badge-ok { background: #dcfce7; color: var(--ok); }
-        .badge-warn { background: #fef3c7; color: var(--warn); }
+        .badge-ok { background: #d8f5e4; color: var(--ok); }
+        .badge-warn { background: #fff1c2; color: var(--warn); }
         .badge-critical { background: #fee2e2; color: var(--critical); }
         .section-label {
             color: var(--muted);
@@ -145,8 +208,11 @@ def apply_theme() -> None:
             padding: 1rem;
         }
         .brand {
-            background: linear-gradient(135deg, #0f766e, #1d4ed8);
-            border-radius: 10px;
+            background:
+                linear-gradient(135deg, rgba(37, 99, 235, 0.94), rgba(20, 184, 166, 0.78));
+            border: 1px solid rgba(255,255,255,0.20);
+            border-radius: 12px;
+            box-shadow: 0 16px 30px rgba(0,0,0,0.16);
             color: white;
             margin-bottom: 0.9rem;
             padding: 0.9rem;
@@ -154,7 +220,7 @@ def apply_theme() -> None:
         .brand strong { display: block; font-size: 1rem; }
         .brand span { color: rgba(255,255,255,0.78); font-size: 0.78rem; }
         .side-title {
-            color: var(--muted);
+            color: rgba(191, 219, 254, 0.92);
             font-size: 0.72rem;
             font-weight: 800;
             letter-spacing: 0.07em;
@@ -163,9 +229,17 @@ def apply_theme() -> None:
         }
         div[data-testid="stMetric"],
         div[data-testid="stDataFrame"] {
-            border: 1px solid var(--border);
-            border-radius: 10px;
+            background: rgba(249, 251, 255, 0.96);
+            border: 1px solid rgba(96, 132, 180, 0.24);
+            border-radius: 12px;
+            box-shadow: 0 10px 28px rgba(20, 54, 105, 0.06);
             overflow: hidden;
+        }
+        [data-testid="stSelectbox"] div[data-baseweb="select"],
+        [data-testid="stTextInput"] input,
+        [data-testid="stNumberInput"] input,
+        [data-testid="stDateInput"] input {
+            border-color: rgba(96, 132, 180, 0.32);
         }
         .stButton > button {
             border-radius: 7px;
@@ -173,8 +247,9 @@ def apply_theme() -> None:
             font-weight: 700;
         }
         .stButton > button[kind="primary"] {
-            background: var(--brand);
-            border-color: var(--brand);
+            background: linear-gradient(135deg, var(--brand), #0f766e);
+            border-color: transparent;
+            box-shadow: 0 10px 22px rgba(29, 78, 216, 0.20);
         }
         code { white-space: pre-wrap; }
         </style>
