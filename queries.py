@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
-from typing import Optional
+from typing import Any, Optional
 
 import mysql.connector
 import pandas as pd
@@ -42,6 +42,7 @@ class SqlResult:
     dataframe: Optional[pd.DataFrame] = None
     affected_rows: Optional[int] = None
     message: str = ""
+    label: str = ""
 
 
 def query_files() -> list[QueryFile]:
@@ -101,8 +102,36 @@ def first_sql_keyword(sql_text: str) -> str:
     return ""
 
 
+READ_ONLY_KEYWORDS = {"select", "with", "show", "describe", "desc", "explain"}
+SCRIPT_ALLOWED_KEYWORDS = READ_ONLY_KEYWORDS | {"use", "set"}
+DESTRUCTIVE_KEYWORDS = {
+    "alter",
+    "create",
+    "delete",
+    "drop",
+    "grant",
+    "insert",
+    "load",
+    "replace",
+    "revoke",
+    "truncate",
+    "update",
+}
+
+
 def is_read_query(sql_text: str) -> bool:
-    return first_sql_keyword(sql_text) in {"select", "with", "show", "describe", "desc", "explain"}
+    return first_sql_keyword(sql_text) in READ_ONLY_KEYWORDS
+
+
+def is_safe_predefined_script(sql_text: str) -> bool:
+    statements = split_sql_statements(sql_text)
+    if not statements:
+        return False
+    for statement in statements:
+        keyword = first_sql_keyword(statement)
+        if keyword in DESTRUCTIVE_KEYWORDS or keyword not in SCRIPT_ALLOWED_KEYWORDS:
+            return False
+    return True
 
 
 def mysql_cli_args(config: DbConfig, include_database: bool = False) -> list[str]:
@@ -170,6 +199,23 @@ def split_sql_statements(sql_text: str) -> list[str]:
     return [statement.strip() for statement in sql_text.split(";") if statement.strip()]
 
 
+def fetch_dataframe(sql_text: str, config: DbConfig, params: Optional[tuple[Any, ...]] = None) -> pd.DataFrame:
+    if not is_read_query(sql_text):
+        raise ValueError("Only read-only SELECT queries are allowed from the UI.")
+
+    conn = connect(config)
+    try:
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute(sql_text, params or ())
+            columns = [column[0] for column in cursor.description]
+            return pd.DataFrame(cursor.fetchall(), columns=columns)
+        finally:
+            cursor.close()
+    finally:
+        conn.close()
+
+
 def execute_sql(sql_text: str, config: DbConfig) -> SqlResult:
     sql_clean = sql_text.strip()
     if not sql_clean:
@@ -230,6 +276,38 @@ def execute_read_query(sql_text: str, config: DbConfig) -> SqlResult:
             rows = cursor.fetchall()
             dataframe = pd.DataFrame(rows, columns=columns)
             return SqlResult(dataframe=dataframe, message=f"{len(dataframe)} rows returned.")
+        finally:
+            cursor.close()
+    finally:
+        conn.close()
+
+
+def execute_readonly_script(sql_text: str, config: DbConfig) -> list[SqlResult]:
+    sql_clean = sql_text.strip()
+    if not sql_clean:
+        raise ValueError("The query file is empty.")
+    if not is_safe_predefined_script(sql_clean):
+        raise ValueError("This workspace only runs read-only predefined SQL files.")
+
+    results: list[SqlResult] = []
+    conn = connect(config)
+    try:
+        cursor = conn.cursor(dictionary=True)
+        try:
+            for statement in split_sql_statements(sql_clean):
+                keyword = first_sql_keyword(statement)
+                cursor.execute(statement)
+                if cursor.with_rows:
+                    columns = [column[0] for column in cursor.description]
+                    dataframe = pd.DataFrame(cursor.fetchall(), columns=columns)
+                    results.append(
+                        SqlResult(
+                            dataframe=dataframe,
+                            message=f"{len(dataframe)} rows returned.",
+                            label=keyword.upper(),
+                        )
+                    )
+            return results
         finally:
             cursor.close()
     finally:

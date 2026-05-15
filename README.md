@@ -169,7 +169,7 @@ The generated output contains `data/reference`, `data/generated`, `sql/install.s
 
 ## Optional Streamlit App
 
-A Streamlit application is included for local demonstrations. It opens with an operations console for beds, admissions, shifts, emergency visits, procedures, clinical activity, and monitoring counts. The sidebar menu also includes patient-record lookup, database setup, and the Q01-Q15 SQL workspace.
+A Streamlit application is included for local demonstrations. It is a read-only hospital operations dashboard designed for a database-course presentation. The app shows executive KPIs, patient lookup, doctor/procedure analytics, shift staffing, emergency triage, medication safety, predefined Q01-Q15 query execution, and validation results.
 
 Application files:
 
@@ -198,6 +198,8 @@ py -3 -m streamlit run app.py
 ```
 
 On macOS/Linux, the app auto-fills a common Unix socket path such as `/tmp/mysql.sock` when it exists. On Windows, leave the Unix socket field empty and use the normal host/port connection.
+
+The app does not expose destructive schema actions. Database installation and loading should still be done from the terminal with `sql/install.sql`, `sql/load.sql`, and `sql/validation.sql`. The Query Workspace runs only the predefined Q01-Q15 SQL files; arbitrary SQL is not part of the normal UI.
 
 The Streamlit app is optional. The database can always be installed and queried directly from the terminal using the SQL scripts above.
 
