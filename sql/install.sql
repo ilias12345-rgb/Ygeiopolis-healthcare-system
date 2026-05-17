@@ -1486,6 +1486,13 @@ BEGIN
 
     END IF;
 
+    IF OLD.discharge_ts IS NULL AND NEW.discharge_ts IS NOT NULL THEN
+        UPDATE bed
+        SET bed_status = 'AVAILABLE'
+        WHERE bed_id = OLD.bed_id;
+
+    END IF;
+
 END$$
 
 DELIMITER ;
