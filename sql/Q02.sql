@@ -2,8 +2,10 @@ USE yg_eupolis_hospital;
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 SET @target_specialization = 'CARDIOLOGY';
-SET @target_year = YEAR(CURDATE());
+SET @target_year = 2026;
 
+-- Q02: Doctors of one specialization with current-year shift/procedure totals.
+-- Change @target_specialization if the report needs another specialty.
 WITH shiftcnt AS (
     SELECT
         personnel_amka AS doctor_amka,
@@ -25,14 +27,23 @@ surgcnt AS (
 ),
 
 target_doctors AS (
-    SELECT DISTINCT
-        doctor_amka,
-        doctor_name,
-        specialization,
-        doctor_rank,
-        department_names
-    FROM v_doctor_procedure_event
-    WHERE specialization = @target_specialization
+    SELECT
+        d.amka AS doctor_amka,
+        CONCAT(p.first_name, ' ', p.last_name) AS doctor_name,
+        d.specialization,
+        d.doctor_rank,
+        GROUP_CONCAT(DISTINCT dep.department_name ORDER BY dep.department_name SEPARATOR ', ') AS department_names
+    FROM doctor d
+    JOIN personnel p ON p.amka = d.amka
+    LEFT JOIN doctor_department dd ON dd.doctor_amka = d.amka
+    LEFT JOIN department dep ON dep.department_id = dd.department_id
+    WHERE d.specialization = @target_specialization
+    GROUP BY
+        d.amka,
+        p.first_name,
+        p.last_name,
+        d.specialization,
+        d.doctor_rank
 )
 
 SELECT

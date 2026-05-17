@@ -1,10 +1,32 @@
-doctor_amka            doctor_name specialization  doctor_rank    department_names had_shift_this_year  shifts_this_year  surgical_procedures_as_chief
-10000000003       Christos Ioannou     CARDIOLOGY CONSULTANT_A          Cardiology                 YES                 7                             5
-10000000004    Georgia Kostopoulos     CARDIOLOGY CONSULTANT_B          Cardiology                 YES                 7                             5
-10000000000      Giorgos Theodorou     CARDIOLOGY     DIRECTOR          Cardiology                 YES                 7                             5
-10000000002     Katerina Dimitriou     CARDIOLOGY CONSULTANT_A          Cardiology                 YES                 7                             5
-10000000007 Evangelia Konstantinou     CARDIOLOGY     RESIDENT          Cardiology                 YES                 7                             4
-10000000006  Christos Konstantinou     CARDIOLOGY CONSULTANT_B          Cardiology                 YES                 7                             3
-10000000005         Petros Ioannou     CARDIOLOGY CONSULTANT_B          Cardiology                 YES                 7                             3
-10000000001    Spyros Konstantinou     CARDIOLOGY CONSULTANT_A Cardiology, Surgery                 YES                 7                             2
-10000000008        Vasilis Ioannou     CARDIOLOGY     RESIDENT          Cardiology                 YES                 7                             2
++-------------+-------------------------+----------------+--------------+---------------------------+---------------------+------------------+------------------------------+
+| doctor_amka | doctor_name             | specialization | doctor_rank  | department_names          | had_shift_this_year | shifts_this_year | surgical_procedures_as_chief |
++-------------+-------------------------+----------------+--------------+---------------------------+---------------------+------------------+------------------------------+
+| 10000000012 | Christos Pavlidis       | CARDIOLOGY     | CONSULTANT_B | Cardiology, Orthopedics   | YES                 |               10 |                            9 |
+| 10000000004 | Georgia Kostopoulos     | CARDIOLOGY     | CONSULTANT_A | Cardiology                | YES                 |               14 |                            8 |
+| 10000000013 | Panagiotis Papadopoulos | CARDIOLOGY     | CONSULTANT_B | Cardiology                | YES                 |               10 |                            8 |
+| 10000000001 | Spyros Konstantinou     | CARDIOLOGY     | CONSULTANT_A | Cardiology                | YES                 |               13 |                            7 |
+| 10000000019 | Spyros Nikolaou         | CARDIOLOGY     | RESIDENT     | Cardiology                | YES                 |               10 |                            7 |
+| 10000000010 | Spyros Sotiriou         | CARDIOLOGY     | CONSULTANT_B | Cardiology                | YES                 |               10 |                            7 |
+| 10000000000 | Giorgos Theodorou       | CARDIOLOGY     | DIRECTOR     | Cardiology                | YES                 |               14 |                            6 |
+| 10000000021 | Evangelia Sotiriou      | CARDIOLOGY     | RESIDENT     | Cardiology                | YES                 |               10 |                            6 |
+| 10000000014 | Giannis Athanasiou      | CARDIOLOGY     | CONSULTANT_B | Cardiology, Ophthalmology | YES                 |               10 |                            6 |
+| 10000000011 | Nikos Theodorou         | CARDIOLOGY     | CONSULTANT_B | Cardiology                | YES                 |               10 |                            6 |
+| 10000000003 | Christos Ioannou        | CARDIOLOGY     | CONSULTANT_A | Cardiology                | YES                 |               14 |                            5 |
+| 10000000002 | Katerina Dimitriou      | CARDIOLOGY     | CONSULTANT_A | Cardiology                | YES                 |               13 |                            5 |
+| 10000000026 | Marios Nikolaou         | CARDIOLOGY     | RESIDENT     | Cardiology                | YES                 |               11 |                            5 |
+| 10000000015 | Panagiota Ioannou       | CARDIOLOGY     | CONSULTANT_B | Cardiology                | YES                 |               10 |                            5 |
+| 10000000006 | Christos Konstantinou   | CARDIOLOGY     | CONSULTANT_A | Cardiology                | YES                 |               13 |                            4 |
+| 10000000022 | Georgia Georgiou        | CARDIOLOGY     | RESIDENT     | Cardiology                | YES                 |               11 |                            4 |
+| 10000000016 | Katerina Ioannou        | CARDIOLOGY     | CONSULTANT_B | Cardiology                | YES                 |               10 |                            4 |
+| 10000000017 | Vasilis Kostopoulos     | CARDIOLOGY     | RESIDENT     | Cardiology                | YES                 |               10 |                            4 |
+| 10000000008 | Vasilis Ioannou         | CARDIOLOGY     | CONSULTANT_A | Cardiology, Psychiatry    | YES                 |               15 |                            3 |
+| 10000000005 | Petros Ioannou          | CARDIOLOGY     | CONSULTANT_A | Cardiology                | YES                 |               13 |                            3 |
+| 10000000027 | Natalia Athanasiou      | CARDIOLOGY     | RESIDENT     | Cardiology                | YES                 |               10 |                            3 |
+| 10000000023 | Stavros Pavlidis        | CARDIOLOGY     | RESIDENT     | Cardiology                | YES                 |               10 |                            3 |
+| 10000000020 | Vasilis Athanasiou      | CARDIOLOGY     | RESIDENT     | Cardiology                | YES                 |               10 |                            3 |
+| 10000000007 | Evangelia Konstantinou  | CARDIOLOGY     | CONSULTANT_A | Cardiology                | YES                 |               14 |                            2 |
+| 10000000018 | Katerina Dimitriou      | CARDIOLOGY     | RESIDENT     | Cardiology                | YES                 |               10 |                            2 |
+| 10000000025 | Spyros Papadopoulos     | CARDIOLOGY     | RESIDENT     | Cardiology                | YES                 |               10 |                            2 |
+| 10000000024 | Chrysoula Vasiliou      | CARDIOLOGY     | RESIDENT     | Cardiology                | YES                 |               10 |                            1 |
+| 10000000009 | Petros Papadopoulos     | CARDIOLOGY     | CONSULTANT_B | Cardiology                | YES                 |               10 |                            1 |
++-------------+-------------------------+----------------+--------------+---------------------------+---------------------+------------------+------------------------------+

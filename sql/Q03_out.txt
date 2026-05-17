@@ -1,16 +1,22 @@
-patient_amka        patient_name   department_name  hospitalization_count total_hospitalization_cost
- 30000000246 Panagiotis Nikolaou        Cardiology                      7                11870030.00
- 30000000305 Anastasia Dimitriou       Pulmonology                      5                 3887100.00
- 30000000018    Michalis Lazarou        Nephrology                      5                 2892120.00
- 30000000481    Giorgos Nikolaou        Cardiology                      5                 1629980.00
- 30000000454  Chrysoula Nikolaou        Nephrology                      5                 1205210.00
- 30000000135      Kostas Alexiou         Neurology                      5                 1101170.00
- 30000000201  Evangelia Georgiou         Neurology                      5                  910200.00
- 30000000211       Anna Pavlidis           Surgery                      5                  903850.00
- 30000000489    Giorgos Vasiliou         Neurology                      5                  820940.00
- 30000000043      Ioanna Ioannou  Gastroenterology                      5                  661850.00
- 30000000295    Giannis Nikolaou  Gastroenterology                      5                  567000.00
- 30000000338      Petros Ioannou       Orthopedics                      4                 4219800.00
- 30000000431     Vasilis Lazarou       Orthopedics                      4                 2031100.00
- 30000000403     Dimitra Ioannou        Psychiatry                      4                  859900.00
- 30000000362     Eleni Dimitriou Internal Medicine                      4                  781200.00
++--------------+-------------------------+-----------------+-----------------------+----------------------------+
+| patient_amka | patient_name            | department_name | hospitalization_count | total_hospitalization_cost |
++--------------+-------------------------+-----------------+-----------------------+----------------------------+
+| 30000000987  | Anna Pavlidis           | Orthopedics     |                     5 |                 2895900.00 |
+| 30000004740  | Sofia Nikolaou          | Orthopedics     |                     5 |                 2586650.00 |
+| 30000003602  | Petros Vasiliou         | Cardiology      |                     5 |                 2238600.00 |
+| 30000001384  | Giorgos Dimitriou       | Orthopedics     |                     5 |                 2156700.00 |
+| 30000000003  | Evangelia Pavlidis      | Pulmonology     |                     5 |                 1634600.00 |
+| 30000003874  | Spyros Vasiliou         | Surgery         |                     5 |                  989800.00 |
+| 30000001715  | Eleni Sotiriou          | Neurology       |                     5 |                  684400.00 |
+| 30000004970  | Panagiotis Konstantinou | ENT             |                     5 |                  635900.00 |
+| 30000004415  | Chrysoula Konstantinou  | Surgery         |                     5 |                  546500.00 |
+| 30000002590  | Michalis Kostopoulos    | Oncology        |                     4 |                 3451100.00 |
+| 30000004087  | Evangelia Lazarou       | Orthopedics     |                     4 |                 2418900.00 |
+| 30000004588  | Sofia Petrou            | Oncology        |                     4 |                 1924000.00 |
+| 30000000527  | Anna Theodorou          | Neurology       |                     4 |                 1598600.00 |
+| 30000003941  | Natalia Athanasiou      | Cardiology      |                     4 |                 1543080.00 |
+| 30000002781  | Theodoros Athanasiou    | Cardiology      |                     4 |                 1157200.00 |
+| 30000000202  | Nikos Pavlidis          | Cardiology      |                     4 |                  922220.00 |
+| 30000004305  | Eleni Alexiou           | Cardiology      |                     4 |                  825800.00 |
+| 30000000870  | Panagiota Papadopoulos  | Nephrology      |                     4 |                  546850.00 |
++--------------+-------------------------+-----------------+-----------------------+----------------------------+

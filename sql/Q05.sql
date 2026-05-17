@@ -1,5 +1,7 @@
 USE yg_eupolis_hospital;
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- Q05: Young doctors with the highest number of surgical procedures as chief.
 WITH young_surgeon_counts AS (
     SELECT
         doctor_amka,
