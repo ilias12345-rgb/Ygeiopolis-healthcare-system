@@ -1005,6 +1005,22 @@ BEGIN
     END IF;
 END$$
 
+CREATE TRIGGER trg_procedure_participant_not_chief_bu /* Για να ελέγξουμε αν ο συμμετέχων που προσπαθούμε να προσθέσουμε, σε περίπτωση update είναι ο ίδιος με τον επικεφαλής χειρουργό της διαδικασίας, κάτι που απαγορεύεται */
+BEFORE UPDATE ON procedure_participant
+FOR EACH ROW
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM procedure_event pe
+        WHERE pe.procedure_event_id = NEW.procedure_event_id
+          AND pe.chief_surgeon_amka = NEW.personnel_amka
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Chief surgeon must not be duplicated in procedure participants.';
+    END IF;
+END$$
+
+
 CREATE TRIGGER trg_procedure_participant_not_admin_bi /* Για να ελέγξουμε αν ο συμμετέχων που προσπαθούμε να προσθέσουμε είναι διοικητικό προσωπικό, κάτι που απαγορεύεται */
 BEFORE INSERT ON procedure_participant
 FOR EACH ROW
