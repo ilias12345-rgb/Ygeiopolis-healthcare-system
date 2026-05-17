@@ -99,27 +99,27 @@ After a successful load, the main operational tables should be populated. The cu
 | Table | Expected rows |
 | --- | ---: |
 | department | 15 |
-| personnel | 495 |
-| doctor | 135 |
-| nurse | 270 |
-| administrative_staff | 90 |
-| patient | 500 |
+| personnel | 1140 |
+| doctor | 420 |
+| nurse | 540 |
+| administrative_staff | 180 |
+| patient | 5000 |
 | bed | 390 |
-| department_shift | 315 |
-| shift_assignment | 3465 |
-| emergency_visit | 1500 |
-| hospitalization | 1200 |
-| hospitalization_doctor | 2385 |
-| lab_test | 800 |
+| department_shift | 11655 |
+| shift_assignment | 128205 |
+| emergency_visit | 18000 |
+| hospitalization | 12000 |
+| hospitalization_doctor | 23966 |
+| lab_test | 12000 |
 | procedure_catalog | 8740 |
-| procedure_event | 500 |
-| procedure_participant | 1244 |
+| procedure_event | 6000 |
+| procedure_participant | 14948 |
 | drug | 95764 |
 | active_substance | 12086 |
 | drug_active_substance | 100057 |
-| patient_allergy | 136 |
-| prescription | 1000 |
-| hospitalization_evaluation | 882 |
+| patient_allergy | 139 |
+| prescription | 12000 |
+| hospitalization_evaluation | 8822 |
 
 Medication data is included in the final CSVs. The drug, active-substance, and drug-substance reference rows come from the official EMA Article 57 workbook. Patient allergies and prescriptions are generated from those official reference rows so the database can demonstrate allergy checks and prescription queries without using fake medication names.
 
@@ -261,19 +261,20 @@ Important business rules are enforced in SQL:
 
 ## Data Generation
 
-The generator creates a deterministic dataset with enough rows for the requested queries. The current defaults generate:
+The generator creates a deterministic dataset with enough rows for the requested queries and for meaningful `EXPLAIN ANALYZE` comparisons. The current defaults generate:
 
-- more than 80 doctors;
-- 500 patients;
-- 1200 hospitalizations;
+- 420 doctors;
+- 5000 patients;
+- 12000 hospitalizations over a three-year date window;
 - 15 departments;
+- 11655 department shifts and 128205 shift assignments, sampled as a full week per month across the three-year window;
 - more than 95,000 official EMA drug rows;
 - more than 12,000 official active-substance rows;
-- 1000 prescriptions generated from official EMA drug references;
+- 12000 prescriptions generated from official EMA drug references;
 - at least 10 operating/procedure places;
-- up to 500 procedure events, depending on room/staff availability;
-- 800 lab tests;
-- 1500 emergency visits.
+- 6000 procedure events, depending on room/staff availability;
+- 12000 lab tests;
+- 18000 emergency visits.
 
 The data size can be changed without editing Python:
 
@@ -281,9 +282,11 @@ The data size can be changed without editing Python:
 python3 scripts/generate_data.py \
   --source-dir data_sources \
   --output-dir hospital_dataset_bundle \
-  --patient-count 800 \
-  --hospitalization-count 2000 \
-  --prescription-count 1800
+  --patient-count 8000 \
+  --hospitalization-count 20000 \
+  --prescription-count 20000 \
+  --shift-days 1096 \
+  --shift-sample-days-per-month 7
 ```
 
 The generated bundle also contains `TABLE_TO_CSV_MAP.csv`, `QUERY_COVERAGE.csv`, `dataset_summary.json`, and portable `sql/install.sql`, `sql/load.sql`, and `sql/validation.sql` files.

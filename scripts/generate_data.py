@@ -30,6 +30,10 @@ SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
 DATASET_AS_OF_TS = datetime(2026, 5, 12, 12, 0, 0)
+DATASET_START_DATE = date(2023, 5, 13)
+DATASET_END_DATE = date(2026, 5, 12)
+DEFAULT_SHIFT_DAYS = (DATASET_END_DATE - DATASET_START_DATE).days + 1
+DEFAULT_SHIFT_SAMPLE_DAYS_PER_MONTH = 7
 
 DEPARTMENT_SPECS = [
     ("Cardiology", "CARDIOLOGY"),
@@ -536,6 +540,45 @@ def load_reference_data(source_dir: Path, out_ref_dir: Path, ema_xlsx: Path | No
     """Load official reference sources and write normalized reference CSVs."""
 
     out_ref_dir.mkdir(parents=True, exist_ok=True)
+    existing_ref_dir = source_dir / "data" / "reference"
+    existing_reference_files = {
+        "icd10": "icd10_diagnosis.csv",
+        "ken": "ken.csv",
+        "icd10_ken": "icd10_ken_map.csv",
+        "procedure_catalog": "procedure_catalog.csv",
+        "lab_test_catalog": "lab_test_catalog.csv",
+        "drug": "drug.csv",
+        "active_substance": "active_substance.csv",
+        "drug_active_substance": "drug_active_substance.csv",
+    }
+    if ema_xlsx is None and all((existing_ref_dir / name).exists() for name in existing_reference_files.values()):
+        # Final-submission mode: when the repository already contains the
+        # cleaned official reference CSVs, reuse them directly. This lets a
+        # teammate regenerate only the synthetic transactional data without
+        # needing the original Excel/Word workbooks on their laptop.
+        frames = {
+            key: pd.read_csv(existing_ref_dir / filename, dtype=str if key in {"icd10", "ken", "icd10_ken", "procedure_catalog", "lab_test_catalog", "drug"} else None)
+            for key, filename in existing_reference_files.items()
+        }
+        for filename in existing_reference_files.values():
+            src = existing_ref_dir / filename
+            dst = out_ref_dir / filename
+            if src.resolve() != dst.resolve():
+                shutil.copy2(src, dst)
+        metadata_src = existing_ref_dir / "reference_metadata.json"
+        if metadata_src.exists() and metadata_src.resolve() != (out_ref_dir / "reference_metadata.json").resolve():
+            shutil.copy2(metadata_src, out_ref_dir / "reference_metadata.json")
+        meta = {"mode": "existing_clean_reference_csv", "ema_mode": "existing_clean_reference_csv"}
+        metadata_src = existing_ref_dir / "reference_metadata.json"
+        if metadata_src.exists():
+            try:
+                meta.update(json.loads(metadata_src.read_text(encoding="utf-8")))
+            except json.JSONDecodeError:
+                pass
+        return {
+            **frames,
+            "meta": meta,
+        }
 
     # ICD-10
     icd_path = resolve_source_file(source_dir, [
@@ -701,12 +744,19 @@ def build_people_and_org(gen_dir: Path):
     amka_counter = 10000000000
     person_idx = 1
 
-    # Doctors: 9 per department -> 135 total
+    # Larger personnel pools make the three-year shift roster realistic:
+    # every department must staff morning/afternoon/night shifts without
+    # breaking monthly limits, rest windows, or senior-doctor coverage.
     for dep in DEPARTMENT_SPECS:
         dep_name, spec = dep
         dep_id = department_df.loc[department_df["department_name"] == dep_name, "department_id"].iloc[0]
         local_doctors = []
-        ranks = ["DIRECTOR", "CONSULTANT_A", "CONSULTANT_A", "CONSULTANT_A", "CONSULTANT_B", "CONSULTANT_B", "CONSULTANT_B", "RESIDENT", "RESIDENT"]
+        ranks = (
+            ["DIRECTOR"]
+            + ["CONSULTANT_A"] * 8
+            + ["CONSULTANT_B"] * 8
+            + ["RESIDENT"] * 11
+        )
         for rank in ranks:
             gender = pick(["M", "F"])
             first = pick(FIRST_NAMES_M if gender == "M" else FIRST_NAMES_F)
@@ -758,9 +808,10 @@ def build_people_and_org(gen_dir: Path):
                 other = random.choice([x for x in department_df["department_id"] if x != dep_id])
                 doctor_department_rows.append({"doctor_amka": d["amka"], "department_id": int(other)})
 
-    # Nurses: 18 per department -> 270
+    # Nurses: 36 per department. This keeps enough capacity for dense,
+    # multi-year shift assignments while preserving department ownership.
     for dep_id in department_df["department_id"]:
-        for i in range(18):
+        for i in range(36):
             gender = pick(["M", "F"])
             first = pick(FIRST_NAMES_M if gender == "M" else FIRST_NAMES_F)
             last = pick(LAST_NAMES)
@@ -784,9 +835,10 @@ def build_people_and_org(gen_dir: Path):
                 "department_id": int(dep_id),
             })
 
-    # Admin: 6 per department -> 90
+    # Administrative staff: 12 per department, enough for continuous
+    # admissions/front-desk coverage in the generated roster.
     for dep_id in department_df["department_id"]:
-        for i in range(6):
+        for i in range(12):
             gender = pick(["M", "F"])
             first = pick(FIRST_NAMES_M if gender == "M" else FIRST_NAMES_F)
             last = pick(LAST_NAMES)
@@ -917,8 +969,14 @@ def build_patients(gen_dir: Path, count=500):
     return {"patient": patient_df, "emergency_contact": emergency_contact_df}
 
 
-def build_shifts(gen_dir: Path, org):
-    """Create a one-week roster that respects the schema shift rules."""
+def build_shifts(
+    gen_dir: Path,
+    org,
+    start_date=DATASET_START_DATE,
+    days=DEFAULT_SHIFT_DAYS,
+    sample_days_per_month=DEFAULT_SHIFT_SAMPLE_DAYS_PER_MONTH,
+):
+    """Create a multi-year roster sample that respects the schema shift rules."""
 
     dept_df = org["department"]
     doctor_df = org["doctor"]
@@ -926,7 +984,68 @@ def build_shifts(gen_dir: Path, org):
     admin_df = org["administrative_staff"]
     shifts, assignments = [], []
     shift_id = 1
-    week_start = date(2026, 3, 9)
+    monthly_counts = defaultdict(int)
+    last_shift_end = {}
+    consecutive_nights = defaultdict(int)
+
+    def shift_bounds(shift_date, shift_type):
+        start_text, end_text = SHIFT_TIMES[shift_type]
+        start_dt = datetime.combine(shift_date, time.fromisoformat(start_text))
+        end_dt = datetime.combine(shift_date, time.fromisoformat(end_text))
+        if shift_type == "NIGHT":
+            end_dt += timedelta(days=1)
+        return start_text, end_text, start_dt, end_dt
+
+    def eligible(amka, start_dt, shift_type, monthly_limit):
+        month_key = (amka, start_dt.year, start_dt.month)
+        if monthly_counts[month_key] >= monthly_limit:
+            return False
+        previous_end = last_shift_end.get(amka)
+        if previous_end is not None and start_dt - previous_end < timedelta(hours=8):
+            return False
+        if shift_type == "NIGHT" and consecutive_nights[amka] >= 3:
+            return False
+        return True
+
+    def register(amka, start_dt, end_dt, shift_type):
+        monthly_counts[(amka, start_dt.year, start_dt.month)] += 1
+        last_shift_end[amka] = end_dt
+        if shift_type == "NIGHT":
+            consecutive_nights[amka] += 1
+        else:
+            consecutive_nights[amka] = 0
+
+    def pick_available(pool, needed, start_dt, end_dt, shift_type, monthly_limit, selected=None):
+        selected = set(selected or [])
+        candidates = [
+            amka for amka in pool
+            if amka not in selected and eligible(amka, start_dt, shift_type, monthly_limit)
+        ]
+        random.shuffle(candidates)
+        candidates.sort(key=lambda amka: monthly_counts[(amka, start_dt.year, start_dt.month)])
+        chosen = candidates[:needed]
+        if len(chosen) < needed:
+            raise ValueError(
+                "Could not build a valid shift roster. Increase department staff pools "
+                "or reduce --shift-days."
+            )
+        for amka in chosen:
+            register(amka, start_dt, end_dt, shift_type)
+        return chosen
+
+    def shift_dates_for_window():
+        all_dates = date_range(start_date, days)
+        if sample_days_per_month <= 0:
+            return all_dates
+        by_month = defaultdict(list)
+        for shift_date in all_dates:
+            by_month[(shift_date.year, shift_date.month)].append(shift_date)
+        selected_dates = []
+        for month_key in sorted(by_month):
+            # A full week per month keeps the roster visibly spread across
+            # three years without making LOAD DATA impractical under triggers.
+            selected_dates.extend(by_month[month_key][:sample_days_per_month])
+        return selected_dates
 
     # pools by department
     doctors_by_dep = defaultdict(list)
@@ -940,25 +1059,13 @@ def build_shifts(gen_dir: Path, org):
         dep_id = int(dep.department_id)
         dep_docs = doctors_by_dep[dep_id]
         seniors = [x["amka"] for x in dep_docs if x["rank"] in ("DIRECTOR", "CONSULTANT_A")]
-        mids = [x["amka"] for x in dep_docs if x["rank"] == "CONSULTANT_B"]
-        residents = [x["amka"] for x in dep_docs if x["rank"] == "RESIDENT"]
-        others = seniors + mids + residents
+        others = [x["amka"] for x in dep_docs]
         nurse_pool = nurses_by_dep[dep_id]
         admin_pool = admins_by_dep[dep_id]
 
-        for day_idx, d in enumerate(date_range(week_start, 7)):
-            senior_rot = seniors[day_idx % len(seniors):] + seniors[:day_idx % len(seniors)]
-            mid_rot = mids[day_idx % len(mids):] + mids[:day_idx % len(mids)]
-            res_rot = residents[day_idx % len(residents):] + residents[:day_idx % len(residents)]
-            nurse_rot = nurse_pool[(day_idx*3) % len(nurse_pool):] + nurse_pool[:(day_idx*3) % len(nurse_pool)]
-            admin_rot = admin_pool[(day_idx*2) % len(admin_pool):] + admin_pool[:(day_idx*2) % len(admin_pool)]
-
-            daily_doc_used = set()
-            daily_nurse_used = set()
-            daily_admin_used = set()
-
+        for d in shift_dates_for_window():
             for stype_idx, stype in enumerate(["MORNING","AFTERNOON","NIGHT"]):
-                start_time, end_time = SHIFT_TIMES[stype]
+                start_time, end_time, start_dt, end_dt = shift_bounds(d, stype)
                 shifts.append({
                     "shift_id": shift_id,
                     "department_id": dep_id,
@@ -968,30 +1075,21 @@ def build_shifts(gen_dir: Path, org):
                     "end_time": end_time,
                     "shift_status": "PROCESSING",
                 })
-                # doctors: one senior, one mid, one remaining not yet used in day
-                doc_candidates = []
-                s = next(x for x in senior_rot if x not in daily_doc_used)
-                m = next(x for x in mid_rot if x not in daily_doc_used)
-                doc_candidates.extend([s, m])
-                remaining = [x for x in others if x not in daily_doc_used and x not in doc_candidates]
-                # make residents appear often but not always
-                preferred = [x for x in res_rot if x in remaining]
-                third = preferred[0] if preferred and stype != "NIGHT" else remaining[0]
-                doc_candidates.append(third)
+                # Shift coverage rule: every shift has three doctors, including
+                # at least one senior doctor so residents are never unsupervised.
+                doc_candidates = pick_available(seniors, 1, start_dt, end_dt, stype, 15)
+                doc_candidates += pick_available(others, 2, start_dt, end_dt, stype, 15, selected=doc_candidates)
                 for amka in doc_candidates:
-                    daily_doc_used.add(amka)
                     assignments.append({"shift_id": shift_id, "personnel_amka": amka, "assigned_role": "ON_CALL_DOCTOR"})
 
-                # nurses: six distinct per day
-                nurse_candidates = [x for x in nurse_rot if x not in daily_nurse_used][:6]
+                # Nursing/admin coverage follows the project business rules:
+                # six nurses and two administrative staff per department shift.
+                nurse_candidates = pick_available(nurse_pool, 6, start_dt, end_dt, stype, 20)
                 for amka in nurse_candidates:
-                    daily_nurse_used.add(amka)
                     assignments.append({"shift_id": shift_id, "personnel_amka": amka, "assigned_role": "ON_CALL_NURSE"})
 
-                # admins: two distinct per day
-                admin_candidates = [x for x in admin_rot if x not in daily_admin_used][:2]
+                admin_candidates = pick_available(admin_pool, 2, start_dt, end_dt, stype, 25)
                 for amka in admin_candidates:
-                    daily_admin_used.add(amka)
                     assignments.append({"shift_id": shift_id, "personnel_amka": amka, "assigned_role": "ON_CALL_ADMIN"})
 
                 shift_id += 1
@@ -1003,7 +1101,7 @@ def build_shifts(gen_dir: Path, org):
     return {"department_shift": shift_df, "shift_assignment": assign_df}
 
 
-def build_emergency_visits(gen_dir: Path, patients, org, count=1500):
+def build_emergency_visits(gen_dir: Path, patients, org, count=18000, start_date=DATASET_START_DATE, days=DEFAULT_SHIFT_DAYS):
     """Create emergency visits with triage levels and service timestamps."""
 
     patient_df = patients["patient"]
@@ -1018,9 +1116,9 @@ def build_emergency_visits(gen_dir: Path, patients, org, count=1500):
 
     visits = []
     visit_id = 1
-    start_dt = datetime(2025, 1, 1, 0, 0, 0)
+    start_dt = datetime.combine(start_date, time(0, 0, 0))
     for i in range(count):
-        arrival = start_dt + timedelta(hours=random.randint(0, 24 * 730 - 1), minutes=random.randint(0, 59))
+        arrival = start_dt + timedelta(hours=random.randint(0, 24 * days - 1), minutes=random.randint(0, 59))
         level = random.choices([1,2,3,4,5], weights=[6,14,28,32,20])[0]
         wait_minutes = {
             1: random.randint(1, 8),
@@ -1059,10 +1157,12 @@ def build_clinical_events(
     ref,
     org,
     patients,
-    hospitalization_count=1200,
-    lab_test_count=800,
-    procedure_event_count=500,
-    prescription_count=1000,
+    hospitalization_count=12000,
+    lab_test_count=12000,
+    procedure_event_count=6000,
+    prescription_count=12000,
+    admission_start_date=DATASET_START_DATE,
+    admission_days=DEFAULT_SHIFT_DAYS,
 ):
     """Create hospitalizations and related clinical events."""
 
@@ -1137,10 +1237,11 @@ def build_clinical_events(
     equal_total_pairs = [tuple(random.sample([p for p in patient_ids if p not in repeat_same_dept_patients], 2)) for _ in range(10)]
     q14_prefixes = [p for p in ["I21","J18","K35","M16","G40"] if p in prefix_to_kens][:5]
 
-    # base hospitalization targets by department
+    # Base hospitalization targets by department. The default three-year
+    # window creates enough fact rows for visible EXPLAIN ANALYZE differences
+    # when comparing indexed and non-indexed query plans.
     dept_ids = list(dept_df["department_id"])
-    start_2025 = datetime(2025,1,1,8,0,0)
-    end_2026 = datetime(2026,12,20,10,0,0)
+    clinical_start = datetime.combine(admission_start_date, time(8, 0, 0))
 
     def pick_hosp_prefix(dep_name, forced_prefix=None):
         if forced_prefix:
@@ -1277,7 +1378,7 @@ def build_clinical_events(
         attempts += 1
         p = pick(patient_ids)
         dep_id = pick(dept_ids)
-        admission = datetime(2025,1,1,8,0,0) + timedelta(days=random.randint(0, 715), hours=random.randint(0, 16))
+        admission = clinical_start + timedelta(days=random.randint(0, admission_days - 1), hours=random.randint(0, 16))
         prefix = None
         add_hospitalization(p, dep_id, admission, stay_days=random.randint(1, 12), prefix=prefix)
 
@@ -1449,14 +1550,22 @@ def build_clinical_events(
         drug_to_subs = defaultdict(set)
         for r in das.itertuples(index=False):
             drug_to_subs[r.drug_id].add(sub_name[r.substance_id])
+        all_drug_ids = list(drug_df["drug_id"])
+        patient_banned_substances = {
+            patient_amka: {sub_name[sid] for sid in group["substance_id"].tolist()}
+            for patient_amka, group in allergy_df.groupby("patient_amka")
+        }
+        safe_drug_cache = {}
 
         def safe_drugs_for_patient(patient_amka):
-            banned = set(sub_name[sid] for sid in allergy_df.loc[allergy_df["patient_amka"] == patient_amka, "substance_id"].tolist())
-            out = []
-            for drug_id in drug_df["drug_id"]:
-                if not (drug_to_subs[drug_id] & banned):
-                    out.append(drug_id)
-            return out
+            if patient_amka in safe_drug_cache:
+                return safe_drug_cache[patient_amka]
+            banned = patient_banned_substances.get(patient_amka, set())
+            if not banned:
+                safe_drug_cache[patient_amka] = all_drug_ids
+            else:
+                safe_drug_cache[patient_amka] = [drug_id for drug_id in all_drug_ids if not (drug_to_subs[drug_id] & banned)]
+            return safe_drug_cache[patient_amka]
 
         # helper: pick a drug containing a target substance
         drugs_by_sub = defaultdict(list)
@@ -1560,8 +1669,9 @@ def build_clinical_events(
             })
             prescription_id += 1
         presc_df = pd.DataFrame(prescription_rows).sort_values("prescription_id").reset_index(drop=True)
-        if len(presc_df) < 360:
-            raise ValueError("Could not generate 360 unique, allergy-safe prescriptions.")
+        minimum_expected_prescriptions = min(360, prescription_count)
+        if len(presc_df) < minimum_expected_prescriptions:
+            raise ValueError(f"Could not generate {minimum_expected_prescriptions} unique, allergy-safe prescriptions.")
 
     # Minimal images
     for img_id, dep in enumerate(dept_df.itertuples(index=False), start=1):
@@ -1895,16 +2005,20 @@ def main():
     parser.add_argument("--source-dir", default=str(default_root), help="Directory containing the uploaded source files.")
     parser.add_argument("--output-dir", default=str(default_root / "hospital_dataset_bundle"), help="Output bundle root.")
     parser.add_argument("--ema-xlsx", default=None, help="Optional EMA Article 57 workbook for official drug reference data.")
-    parser.add_argument("--patient-count", type=int, default=500, help="Number of synthetic patients to generate.")
-    parser.add_argument("--emergency-count", type=int, default=1500, help="Number of synthetic emergency visits to generate.")
-    parser.add_argument("--hospitalization-count", type=int, default=1200, help="Target number of hospitalizations to generate.")
-    parser.add_argument("--lab-test-count", type=int, default=800, help="Target number of lab tests to generate.")
-    parser.add_argument("--procedure-count", type=int, default=500, help="Target number of procedure events to attempt.")
-    parser.add_argument("--prescription-count", type=int, default=1000, help="Target number of prescriptions to generate.")
+    parser.add_argument("--patient-count", type=int, default=5000, help="Number of synthetic patients to generate.")
+    parser.add_argument("--emergency-count", type=int, default=18000, help="Number of synthetic emergency visits to generate.")
+    parser.add_argument("--hospitalization-count", type=int, default=12000, help="Target number of hospitalizations to generate.")
+    parser.add_argument("--lab-test-count", type=int, default=12000, help="Target number of lab tests to generate.")
+    parser.add_argument("--procedure-count", type=int, default=6000, help="Target number of procedure events to attempt.")
+    parser.add_argument("--prescription-count", type=int, default=12000, help="Target number of prescriptions to generate.")
+    parser.add_argument("--shift-start-date", default=DATASET_START_DATE.isoformat(), help="First generated shift date, YYYY-MM-DD.")
+    parser.add_argument("--shift-days", type=int, default=DEFAULT_SHIFT_DAYS, help="Operational date window in days for shifts, emergency visits, and hospitalizations.")
+    parser.add_argument("--shift-sample-days-per-month", type=int, default=DEFAULT_SHIFT_SAMPLE_DAYS_PER_MONTH, help="Number of fully covered shift days generated per month; use 0 for every day.")
     args = parser.parse_args()
 
     source_dir = Path(args.source_dir).expanduser().resolve()
     bundle_dir = Path(args.output_dir).expanduser().resolve()
+    shift_start_date = date.fromisoformat(args.shift_start_date)
     ref_dir = bundle_dir / "data" / "reference"
     gen_dir = bundle_dir / "data" / "generated"
     (bundle_dir / "data" / "reference").mkdir(parents=True, exist_ok=True)
@@ -1914,8 +2028,14 @@ def main():
     ref = load_reference_data(source_dir, ref_dir, ema_xlsx=Path(args.ema_xlsx) if args.ema_xlsx else None)
     org = build_people_and_org(gen_dir)
     patients = build_patients(gen_dir, count=args.patient_count)
-    shifts = build_shifts(gen_dir, org)
-    emergencies = build_emergency_visits(gen_dir, patients, org, count=args.emergency_count)
+    shifts = build_shifts(
+        gen_dir,
+        org,
+        start_date=shift_start_date,
+        days=args.shift_days,
+        sample_days_per_month=args.shift_sample_days_per_month,
+    )
+    emergencies = build_emergency_visits(gen_dir, patients, org, count=args.emergency_count, start_date=shift_start_date, days=args.shift_days)
     clinical = build_clinical_events(
         gen_dir,
         ref,
@@ -1925,6 +2045,8 @@ def main():
         lab_test_count=args.lab_test_count,
         procedure_event_count=args.procedure_count,
         prescription_count=args.prescription_count,
+        admission_start_date=shift_start_date,
+        admission_days=args.shift_days,
     )
     validate_generated_bundle(ref, org, patients, clinical)
     write_load_sql(bundle_dir)
