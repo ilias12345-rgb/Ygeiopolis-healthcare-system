@@ -1,22 +1,28 @@
 WITH RECURSIVE sup_hierarchy AS (
-    SELECT d.amka, d.supervisor_amka, d.doctor_rank, p.first_name, p.last_name, 1 AS lvl
-    FROM doctor d
-    JOIN personnel p ON d.amka = p.amka
+    SELECT amka AS doctor_amka, amka AS current_doctor_amka, supervisor_amka AS current_sup_amka, 1 AS lvl
+    FROM doctor
+    WHERE supervisor_amka IS NOT NULL
+
     UNION ALL
 
-    SELECT sh.amka, doc.supervisor_amka, sh.doctor_rank, sh.first_name, sh.last_name, sh.lvl + 1 AS lvl
+    SELECT sh.doctor_amka, d.amka, d.supervisor_amka, sh.lvl + 1
     FROM sup_hierarchy sh
-    JOIN doctor doc ON sh.supervisor_amka = doc.amka
+    JOIN doctor d ON sh.current_sup_amka = d.amka
+    WHERE d.supervisor_amka IS NOT NULL
 )
 SELECT
-    s.amka,
-    s.supervisor_amka,
-    s.doctor_rank,
-    s.first_name,
-    s.last_name,
-    p2.first_name AS supervisor_first_name,
-    p2.last_name AS supervisor_last_name,
+    s.doctor_amka AS initial_doctor_amka,
+    p_curr.first_name AS first_name,
+    p_curr.last_name AS last_name,
+    d_curr.doctor_rank AS doctor_rank,
+    s.current_sup_amka AS supervisor_amka,
+    p_sup.first_name AS supervisor_first_name,
+    p_sup.last_name AS supervisor_last_name,
+    d_sup.doctor_rank AS supervisor_rank,
     s.lvl AS level
 FROM sup_hierarchy s
-LEFT JOIN personnel p2 ON p2.amka = s.supervisor_amka
-ORDER BY s.amka, s.lvl;
+JOIN personnel p_curr ON s.current_doctor_amka = p_curr.amka
+JOIN doctor d_curr ON s.current_doctor_amka = d_curr.amka
+JOIN personnel p_sup ON s.current_sup_amka = p_sup.amka
+JOIN doctor d_sup ON s.current_sup_amka = d_sup.amka
+ORDER BY initial_doctor_amka, level;
