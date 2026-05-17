@@ -22,16 +22,24 @@ python3 scripts/generate_data.py --source-dir data_sources --output-dir .
 
 The `--source-dir` folder should contain the official ICD-10, KEN, procedure, and optional EMA files. With `--output-dir .`, the script refreshes the repository-level `data/reference` and `data/generated` folders that `sql/load.sql` reads from.
 
+The current defaults are intentionally larger than the assignment minimums:
+5000 patients, 12000 hospitalizations, 18000 emergency visits, 6000 procedures,
+12000 lab tests, 12000 prescriptions, and a three-year operational date
+window. Shift coverage is generated as a full week per month across that
+window so `LOAD DATA` remains practical while still showing multi-year rosters.
+
 ```bash
 python3 scripts/generate_data.py \
   --source-dir data_sources \
   --output-dir . \
-  --patient-count 500 \
-  --emergency-count 1500 \
-  --hospitalization-count 1200 \
-  --lab-test-count 800 \
-  --procedure-count 500 \
-  --prescription-count 1000
+  --patient-count 5000 \
+  --emergency-count 18000 \
+  --hospitalization-count 12000 \
+  --lab-test-count 12000 \
+  --procedure-count 6000 \
+  --prescription-count 12000 \
+  --shift-days 1096 \
+  --shift-sample-days-per-month 7
 ```
 
 Optional EMA Article 57 drug source:
@@ -70,6 +78,7 @@ The output bundle contains:
 - Procedure events are generated only from `procedure_catalog.csv`, with `place_id` chosen from a matching `operating_place.place_type`.
 - Procedure catalog codes/names come from the official procedure source; standard duration and cost are deterministic estimates by category when the source lacks clean values for every row.
 - Hospitalizations are generated without overlapping stays for the same patient or same bed.
+- Shift assignments are generated across a multi-year window while respecting monthly limits, rest windows, night-shift limits, and senior-doctor coverage.
 - Drug, active-substance, allergy, and prescription rows are validated against their reference CSVs before the bundle is accepted.
 - Drug/substance data uses EMA Article 57 when provided. Without that official file, the medication-related CSVs remain empty.
 - The generated data is deterministic, so the same inputs, seed, and count options should produce the same result.
