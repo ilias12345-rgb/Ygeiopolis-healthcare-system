@@ -1,9 +1,9 @@
 USE yg_eupolis_hospital;
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Q05: Young doctors with the highest number of surgical procedures as chief.
+/* Q05: Young doctors with the highest number of surgical procedures as chief. */
 WITH young_surgeon_counts AS (
-    -- Count surgical procedures per young chief surgeon first.
+    /* Count surgical procedures per young chief surgeon first. */
     SELECT
         doctor_amka,
         doctor_name,
@@ -25,7 +25,7 @@ WITH young_surgeon_counts AS (
     HAVING COUNT(DISTINCT procedure_event_id) > 0
 ),
 max_count AS (
-    -- Keep the maximum count separate so ties are returned too.
+    /* Keep the maximum count separate so ties are returned too. */
     SELECT MAX(surgical_procedures_as_chief) AS max_surgical_procedures
     FROM young_surgeon_counts
 )
