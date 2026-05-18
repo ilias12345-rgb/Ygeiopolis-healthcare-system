@@ -1,9 +1,6 @@
 USE yg_eupolis_hospital;
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Q04: For one doctor, calculate patient evaluation averages.
--- The target doctor is selected from the loaded data so the query is
--- reproducible after regeneration and always returns a meaningful result.
 SET @target_doctor_amka = (
     SELECT hd.doctor_amka
     FROM hospitalization_doctor hd
