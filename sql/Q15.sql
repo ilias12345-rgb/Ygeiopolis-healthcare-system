@@ -1,5 +1,4 @@
 WITH LevelTotals AS (
-    -- Εδώ βρίσκουμε τα γενικά σύνολα κάθε επιπέδου (το "10" του παραδείγματός σου)
     SELECT 
         emergency_level,
         COUNT(*) AS total_cases_in_level,
@@ -11,15 +10,12 @@ WITH LevelTotals AS (
 SELECT 
     ev.emergency_level, 
     lt.avg_waiting_time AS average_waiting_time, 
-    lt.hosp_percent AS hospitalization_percent,
     CASE
         WHEN ev.referred_department_id IS NULL THEN 'No referred department'
         ELSE d.department_name
     END AS department_name,
     
     COUNT(*) AS cases_per_department,
-    
-    -- Εδώ γίνεται η μαγεία: 3 / 10 * 100 = 30%
     ROUND(100.0 * COUNT(*) / lt.total_cases_in_level, 2) AS department_distribution_percent
 
 FROM emergency_visit ev
