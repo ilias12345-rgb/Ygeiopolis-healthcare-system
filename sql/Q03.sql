@@ -1,7 +1,7 @@
 USE yg_eupolis_hospital;
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Q03: Patients hospitalized more than three times in the same department.
+/* Q03: Patients hospitalized more than three times in the same department. */
 SELECT
     patient_amka,
     patient_name,
