@@ -13,6 +13,7 @@ SET @target_patient_amka = (
     LIMIT 1
 );
 
+EXPLAIN ANALYZE
 WITH patient_eval AS (
     SELECT
         h.patient_amka,
