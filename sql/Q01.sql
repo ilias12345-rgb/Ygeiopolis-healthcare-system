@@ -1,9 +1,6 @@
 USE yg_eupolis_hospital;
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Q01: Hospital revenue by department/year/KEN and insurance provider.
--- The CTEs recompute the KEN base and extra-day charge so the report can
--- compare calculated revenue with the stored hospitalization total_cost.
 WITH hospitalization_days AS (
     SELECT
         h.hosp_id,
