@@ -537,6 +537,9 @@ CREATE INDEX idx_emergency_visit_referred_department /* Q15 για να βρού
 CREATE INDEX idx_hosp_patient_dept_dates /*Q3, Q6 , Q9 για να βρούμε τις νοσηλείες ενός ασθενή σε συγκεκριμένο τμήμα και χρονικό διάστημα πιο γρήγορα*/
     ON hospitalization (patient_amka, department_id, admission_ts, discharge_ts);
 
+CREATE INDEX idx_hosp_patient_admission_q6 /*Q6: δίνουμε προτεραιότητα στον ασθενή και μετά στην ημερομηνία εισαγωγής για το ιστορικό νοσηλειών*/
+    ON hospitalization (patient_amka, admission_ts);
+
 CREATE INDEX idx_hosp_department_admission /*Q1 για να βρούμε τις νοσηλείες ενός τμήματος με συγκεκριμένη ημερομηνία εισαγωγής πιο γρήγορα*/
     ON hospitalization (department_id, admission_ts);
 
@@ -1496,6 +1499,5 @@ BEGIN
 END$$
 
 DELIMITER ;
-
 
 

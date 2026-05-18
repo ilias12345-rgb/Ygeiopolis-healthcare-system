@@ -51,7 +51,7 @@ SELECT
         + he.overall_experience_score
     ) / 5, 2) AS hospitalization_evaluation_average
 FROM patient p
-JOIN hospitalization h FORCE INDEX (idx_hosp_patient_dept_dates)
+JOIN hospitalization h FORCE INDEX (idx_hosp_patient_admission_q6)
     ON h.patient_amka = p.patient_amka
 JOIN department d ON d.department_id = h.department_id
 JOIN ken k ON k.ken_code = h.ken_code
