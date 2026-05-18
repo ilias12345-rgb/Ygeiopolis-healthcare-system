@@ -1776,7 +1776,7 @@ def write_load_sql(bundle_dir: Path):
 
     load_lines = [
         "-- Robust generated loader. Run from the bundle/project root.",
-        "-- Example: mysql --local-infile=1 -u root -p < sql/load.sql",
+        "-- Example: mysql --local-infile=1 -u root < sql/load.sql",
         "USE yg_eupolis_hospital;",
         "SET FOREIGN_KEY_CHECKS = 1;",
         "",

@@ -26,16 +26,16 @@ if ! find data/reference data/generated -maxdepth 1 -type f -name '*.csv' | grep
 fi
 
 echo "Enabling local_infile for this MySQL server..."
-mysql -u "$MYSQL_USER" -p -e "SET GLOBAL local_infile = 1;"
-mysql -u "$MYSQL_USER" -p -e "SHOW GLOBAL VARIABLES LIKE 'local_infile';"
+mysql -u "$MYSQL_USER" -e "SET GLOBAL local_infile = 1;"
+mysql -u "$MYSQL_USER" -e "SHOW GLOBAL VARIABLES LIKE 'local_infile';"
 
 echo "Installing schema..."
-mysql -u "$MYSQL_USER" -p < sql/install.sql
+mysql -u "$MYSQL_USER" < sql/install.sql
 
 echo "Loading included CSV data from data/..."
-mysql --local-infile=1 -u "$MYSQL_USER" -p < sql/load.sql
+mysql --local-infile=1 -u "$MYSQL_USER" < sql/load.sql
 
 echo "Running validation..."
-mysql -u "$MYSQL_USER" -p < sql/validation.sql
+mysql -u "$MYSQL_USER" < sql/validation.sql
 
 echo "Done. If validation problem-detection result sets are empty, the load is valid."
