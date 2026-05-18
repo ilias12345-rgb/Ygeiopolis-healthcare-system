@@ -510,7 +510,7 @@ CREATE TABLE entity_image (
 CREATE INDEX idx_doctor_specialization_rank /*Για ερώτημα 2, μπορούμε να βρούμε την ειδικότητα και να συνεχίσει πιο γρήγορα το query*/
     ON doctor (specialization, doctor_rank);
 
-CREATE INDEX idx_doctor_supervisor /*Για ερώτημα 13 για να βρούμε την σειρά ιεραρχίας*/
+CREATE INDEX idx_doctor_supervisor /*Για ερώτημα 13 για να βρούμε την σειρά ιεραρχίας A13*/
     ON doctor (supervisor_amka);
 
 CREATE INDEX idx_nurse_department_rank /*Για Q8 και για Q12 για να βρούμε τους νοσηλευτές ενός τμήματος με συγκεκριμένη βαθμίδα πιο γρήγορα*/
@@ -526,9 +526,9 @@ CREATE INDEX idx_shift_department_date_type
     ON department_shift (department_id, shift_date, shift_type); /* Q8, Q12 για να βρούμε τις βάρδιες ενός τμήματος σε συγκεκριμένη ημερομηνία και τύπο πιο γρήγορα */
 
 CREATE INDEX idx_shift_assignment_personnel
-    ON shift_assignment (personnel_amka, shift_id); /* Q8, Q12 για να βρούμε τις βάρδιες ενός νοσηλευτή ή διοικητικού προσωπικού πιο γρήγορα */
+    ON shift_assignment (personnel_amka, shift_id); /* Q8, Q12 για να βρούμε τις βάρδιες ενός νοσηλευτή ή διοικητικού προσωπικού πιο γρήγορα A2 A12*/ 
 
-CREATE INDEX idx_emergency_visit_level_arrival /* Q15 για να βρούμε τις επείγουσες επισκέψεις με συγκεκριμένο επίπεδο επείγοντος και χρονικό διάστημα άφιξης πιο γρήγορα */
+CREATE INDEX idx_emergency_visit_level_arrival /* Q15 για να βρούμε τις επείγουσες επισκέψεις με συγκεκριμένο επίπεδο επείγοντος και χρονικό διάστημα άφιξης πιο γρήγορα A15*/ 
     ON emergency_visit (emergency_level, arrival_ts);
 
 CREATE INDEX idx_emergency_visit_referred_department /* Q15 για να βρούμε τις επείγουσες επισκέψεις που παραπέμφθηκαν σε συγκεκριμένο τμήμα πιο γρήγορα */
@@ -540,7 +540,7 @@ CREATE INDEX idx_hosp_patient_dept_dates /*Q3, Q6 , Q9 για να βρούμε 
 CREATE INDEX idx_hosp_patient_admission_q6 /*Q6: δίνουμε προτεραιότητα στον ασθενή και μετά στην ημερομηνία εισαγωγής για το ιστορικό νοσηλειών*/
     ON hospitalization (patient_amka, admission_ts);
 
-CREATE INDEX idx_hosp_department_admission /*Q1 για να βρούμε τις νοσηλείες ενός τμήματος με συγκεκριμένη ημερομηνία εισαγωγής πιο γρήγορα*/
+CREATE INDEX idx_hosp_department_admission /*Q1 για να βρούμε τις νοσηλείες ενός τμήματος με συγκεκριμένη ημερομηνία εισαγωγής πιο γρήγορα A1 A3 A9 A14*/ 
     ON hospitalization (department_id, admission_ts);
 
 CREATE INDEX idx_hosp_ken /*Q1 για να βρούμε τις νοσηλείες με συγκεκριμένο κεν πιο γρήγορα*/
@@ -558,25 +558,25 @@ CREATE INDEX idx_lab_test_ordering_doctor /* Μαλλον για σβησιμο 
 CREATE INDEX idx_proc_event_hosp_start /*Μάλλον για τροποποιηση*/
     ON procedure_event (hosp_id, start_ts);
 
-CREATE INDEX idx_proc_event_chief /*Q2,Q5,Q11 ίσως*/
+CREATE INDEX idx_proc_event_chief /*Q2,Q5,Q11 ίσως A11*/ 
     ON procedure_event (chief_surgeon_amka, start_ts);
 
-CREATE INDEX idx_proc_event_place /*Ελεγχος overlap για το ίδιο μέρος πιο γρήγορα -> Triggers*/
+CREATE INDEX idx_proc_event_place /*Ελεγχος overlap για το ίδιο μέρος πιο γρήγορα -> Triggers A2*/ 
     ON procedure_event (place_id, start_ts, end_ts);
 
 CREATE INDEX idx_proc_participant_personnel /*Q11*/
     ON procedure_participant (personnel_amka, procedure_event_id);
 
-CREATE INDEX idx_prescription_hosp_patient_start /*Q10 για να βρούμε τις συνταγές ενός ασθενή σε συγκεκριμένη νοσηλεία*/
+CREATE INDEX idx_prescription_hosp_patient_start /*Q10 για να βρούμε τις συνταγές ενός ασθενή σε συγκεκριμένη νοσηλεία A10*/ 
     ON prescription (hosp_id, patient_amka, start_datetime);
 
 CREATE INDEX idx_prescription_doctor /* Μαλλον για σβησιμο */
     ON prescription (doctor_amka, start_datetime);
 
-CREATE INDEX idx_das_substance /*Q7 για να βρούμε τα φάρμακα που περιέχουν μια δραστική ουσία πιο γρήγορα*/
+CREATE INDEX idx_das_substance /*Q7 για να βρούμε τα φάρμακα που περιέχουν μια δραστική ουσία πιο γρήγορα A7*/ 
     ON drug_active_substance (substance_id, drug_id);
 
-CREATE INDEX idx_patient_allergy_substance /*Q7 για να βρούμε τους ασθενείς που είναι αλλεργικοί σε μια δραστική ουσία πιο γρήγορα*/
+CREATE INDEX idx_patient_allergy_substance /*Q7 για να βρούμε τους ασθενείς που είναι αλλεργικοί σε μια δραστική ουσία πιο γρήγορα A7*/ 
     ON patient_allergy (substance_id, patient_amka);
 
 CREATE INDEX idx_evaluation_date /*??*/
