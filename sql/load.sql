@@ -290,6 +290,8 @@ SET
     discharge_instructions = NULLIF(@discharge_instructions, ''),
     status = NULLIF(TRIM(TRAILING '\r' FROM @status), '');
 
+SET @bulk_loading = 1;
+
 LOAD DATA LOCAL INFILE 'data/generated/hospitalization.csv'
 INTO TABLE hospitalization
 CHARACTER SET utf8mb4
@@ -308,6 +310,8 @@ SET
     admission_icd10_code = @admission_icd10_code,
     discharge_icd10_code = NULLIF(@discharge_icd10_code, ''),
     total_cost = TRIM(TRAILING '\r' FROM @total_cost);
+
+SET @bulk_loading = 0;
 
 LOAD DATA LOCAL INFILE 'data/generated/hospitalization_doctor.csv'
 INTO TABLE hospitalization_doctor

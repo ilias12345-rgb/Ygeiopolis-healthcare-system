@@ -3,14 +3,14 @@ SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 SET @target_doctor_amka = (
     SELECT hd.doctor_amka
-    FROM hospitalization_doctor hd FORCE INDEX (PRIMARY)
-    JOIN hospitalization_evaluation he FORCE INDEX (PRIMARY) ON he.hosp_id = hd.hosp_id
+    FROM hospitalization_doctor hd FORCE INDEX (fk_hosp_doctor_doctor)
+    JOIN hospitalization_evaluation he FORCE INDEX (idx_evaluation_evaluation)
+        ON he.hosp_id = hd.hosp_id
     GROUP BY hd.doctor_amka
     ORDER BY COUNT(*) DESC, hd.doctor_amka
     LIMIT 1
 );
 
-EXPLAIN ANALYZE
 SELECT
     d.amka AS doctor_amka,
     CONCAT(p.first_name, ' ', p.last_name) AS doctor_name,
@@ -21,9 +21,11 @@ SELECT
     ROUND(AVG(he.overall_experience_score), 2) AS avg_overall_experience_score
 FROM doctor d
 JOIN personnel p ON p.amka = d.amka
-JOIN hospitalization_doctor hd FORCE INDEX (PRIMARY)
+JOIN hospitalization_doctor hd FORCE INDEX (fk_hosp_doctor_doctor)
+    -- FK-created index on doctor_amka; optimal here because Q04 searches one doctor.
     ON hd.doctor_amka = d.amka
-JOIN hospitalization_evaluation he FORCE INDEX (PRIMARY)
+JOIN hospitalization_evaluation he FORCE INDEX (idx_evaluation_evaluation)
+    -- Q4 index on hosp_id; matches the evaluation lookup from each hospitalization.
     ON he.hosp_id = hd.hosp_id
 WHERE d.amka = @target_doctor_amka
 GROUP BY

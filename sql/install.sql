@@ -1442,17 +1442,19 @@ BEGIN
 
     DECLARE v_bed_status VARCHAR(20);
 
-    SELECT bed_status INTO v_bed_status
-    FROM bed
-    WHERE bed_id = NEW.bed_id;
-
-    IF v_bed_status != 'AVAILABLE' THEN
-        SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Bed is not available.';
-    ELSE
-        UPDATE bed
-        SET bed_status = 'OCCUPIED'
+    IF COALESCE(@bulk_loading, 0) = 0 THEN
+        SELECT bed_status INTO v_bed_status
+        FROM bed
         WHERE bed_id = NEW.bed_id;
+
+        IF v_bed_status != 'AVAILABLE' THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Bed is not available.';
+        ELSE
+            UPDATE bed
+            SET bed_status = 'OCCUPIED'
+            WHERE bed_id = NEW.bed_id;
+        END IF;
     END IF;
 
 END$$
@@ -1465,7 +1467,7 @@ BEGIN
 
     DECLARE v_bed_status VARCHAR(20);
 
-    IF NEW.bed_id != OLD.bed_id THEN
+    IF COALESCE(@bulk_loading, 0) = 0 AND NEW.bed_id != OLD.bed_id THEN
 
         SELECT bed_status
         INTO v_bed_status
@@ -1489,7 +1491,7 @@ BEGIN
 
     END IF;
 
-    IF OLD.discharge_ts IS NULL AND NEW.discharge_ts IS NOT NULL THEN
+    IF COALESCE(@bulk_loading, 0) = 0 AND OLD.discharge_ts IS NULL AND NEW.discharge_ts IS NOT NULL THEN
         UPDATE bed
         SET bed_status = 'AVAILABLE'
         WHERE bed_id = OLD.bed_id;
@@ -1499,5 +1501,4 @@ BEGIN
 END$$
 
 DELIMITER ;
-
 

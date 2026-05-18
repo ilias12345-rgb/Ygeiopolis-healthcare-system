@@ -1,3 +1,7 @@
+USE yg_eupolis_hospital;
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Q11: Doctors whose current-year procedure count is at least five below the top count.
 SELECT p.first_name, p.last_name, d.amka, COUNT(*) AS total_procedures
 FROM doctor d
 JOIN personnel p ON p.amka = d.amka

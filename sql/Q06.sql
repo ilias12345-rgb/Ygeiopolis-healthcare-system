@@ -69,6 +69,7 @@ SELECT
     ) / 5, 2) AS hospitalization_evaluation_average
 FROM patient p
 JOIN hospitalization h
+    -- idx_hosp_patient_admission_q6 supports patient filtering and admission-date ordering.
     ON h.patient_amka = p.patient_amka
 JOIN department d ON d.department_id = h.department_id -- department where the patient was hospitalized
 JOIN ken k ON k.ken_code = h.ken_code -- KEN description and cost category

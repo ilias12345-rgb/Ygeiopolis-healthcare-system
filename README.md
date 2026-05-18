@@ -9,9 +9,13 @@ The database models hospital departments, staff, shifts, emergency triage, patie
 ```text
 .
 ├── diagrams/
+│   ├── er.pdf
 │   ├── er_diagram.png
+│   ├── relational.pdf
 │   └── schema.pdf
 ├── docs/
+│   ├── report.pdf
+│   ├── report.txt
 │   └── exercise-brief-2025-2026.pdf
 ├── data/
 │   ├── reference/
@@ -91,6 +95,14 @@ The scripts do three things:
 1. `install.sql` creates the `yg_eupolis_hospital` database and all schema objects.
 2. `load.sql` loads the included CSV data from relative paths under `data/reference` and `data/generated`.
 3. `validation.sql` prints row counts and runs problem-detection queries. The problem-detection queries should return zero rows.
+
+To regenerate the final query outputs after loading the database:
+
+```bash
+for n in $(seq -w 1 15); do
+  mysql -t -u root < "sql/Q${n}.sql" > "sql/Q${n}_out.txt"
+done
+```
 
 ### Expected Validation Counts
 
@@ -333,4 +345,4 @@ The assignment PDF asks for the following final structure:
 - `requirements.txt`
 - optional `app.py`, `ui.py`, and `queries.py` if an application/demo UI is submitted
 
-Current repository note: placeholder files exist for query outputs and missing final PDFs. Replace those placeholders with the final query outputs and report/diagram PDFs before the last submission export.
+The repository includes the expected final query outputs and the final PDF filenames listed above. The plain-text report source is kept as `docs/report.txt` so the PDF contents remain easy to inspect.

@@ -1,4 +1,9 @@
+USE yg_eupolis_hospital;
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Q15: Emergency visit waiting time and department distribution by triage level.
 WITH LevelTotals AS (
+    -- Per emergency level totals used as denominators for the final percentages.
     SELECT 
         emergency_level,
         COUNT(*) AS total_cases_in_level,

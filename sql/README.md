@@ -7,7 +7,8 @@ This folder contains the database-facing part of the Ygeiopolis Healthcare Syste
 - `install.sql`: portable entrypoint for creating the schema.
 - `load.sql`: portable relative-path loader for generated CSV data under `data/reference` and `data/generated`.
 - `validation.sql`: sanity checks to run after loading data.
-- `Q01.sql` through `Q15.sql`: placeholders for the final assignment queries.
+- `Q01.sql` through `Q15.sql`: final assignment queries.
+- `Q01_out.txt` through `Q15_out.txt`: saved outputs from the final dataset.
 
 ## Execution Order
 
@@ -26,6 +27,14 @@ mysql -u root < sql/validation.sql
 ```
 
 You can also use the root helper script: `bash run_database.sh`.
+
+To regenerate all final query output files after loading the database:
+
+```bash
+for n in $(seq -w 1 15); do
+  mysql -t -u root < "sql/Q${n}.sql" > "sql/Q${n}_out.txt"
+done
+```
 
 ## Schema Areas
 

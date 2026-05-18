@@ -1,4 +1,9 @@
+USE yg_eupolis_hospital;
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Q14: Diagnoses with the same admission count in consecutive years.
 WITH yearly_admissions AS (
+    -- Count each diagnosis per admission year before comparing consecutive years.
     SELECT icd10_code, icd10_description, YEAR(admission_ts) AS yr, COUNT(*) AS admissions
     FROM patient_history
     GROUP BY icd10_code, icd10_description, YEAR(admission_ts)

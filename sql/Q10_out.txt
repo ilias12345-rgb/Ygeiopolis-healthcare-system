@@ -1,1 +1,7 @@
-TODO: Run Q10.sql after final load and save output here.
++--------------+---------------------------+--------------+---------------------------+-----------+
+| substance_id | substance_name            | substance_id | substance_name            | frequency |
++--------------+---------------------------+--------------+---------------------------+-----------+
+|          831 | Histamine Dihydrochloride |         1251 | Codeine Phosphate         |        35 |
+|          302 | Water For Injection       |          831 | Histamine Dihydrochloride |        35 |
+|          302 | Water For Injection       |         1251 | Codeine Phosphate         |        35 |
++--------------+---------------------------+--------------+---------------------------+-----------+
