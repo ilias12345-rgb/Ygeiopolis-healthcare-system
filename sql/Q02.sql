@@ -4,8 +4,7 @@ SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 SET @target_specialization = 'CARDIOLOGY';
 SET @target_year = 2026;
 
--- Q02: Doctors of one specialization with current-year shift/procedure totals.
--- Change @target_specialization if the report needs another specialty.
+
 WITH shiftcnt AS (
     SELECT
         personnel_amka AS doctor_amka,
