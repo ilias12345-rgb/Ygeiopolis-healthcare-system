@@ -2,8 +2,8 @@ USE yg_eupolis_hospital;
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Q06: Hospitalization history for one patient with diagnoses, KEN cost,
--- and evaluation average. The patient is selected from the loaded data
--- by highest hospitalization count so the output is non-empty.
+-- and evaluation average. The FORCE INDEX version is useful for the Q06
+-- EXPLAIN ANALYZE comparison required by the assignment.
 SET @target_patient_amka = (
     SELECT h.patient_amka
     FROM hospitalization h
@@ -28,20 +28,20 @@ WITH patient_eval AS (
     GROUP BY h.patient_amka
 )
 SELECT
-    ph.patient_amka,
-    ph.first_name,
-    ph.last_name,
-    ph.hosp_id,
-    ph.department_name,
-    ph.admission_ts,
-    ph.discharge_ts,
-    ph.icd10_code AS admission_icd10_code,
-    ph.icd10_description AS admission_diagnosis,
+    p.patient_amka,
+    p.first_name,
+    p.last_name,
+    h.hosp_id,
+    d.department_name,
+    h.admission_ts,
+    h.discharge_ts,
+    h.admission_icd10_code,
+    adm.icd10_description AS admission_diagnosis,
     h.discharge_icd10_code,
     disc.icd10_description AS discharge_diagnosis,
-    ph.ken_code,
-    ph.ken_description,
-    ROUND(ph.total_cost, 2) AS total_cost,
+    h.ken_code,
+    k.ken_description,
+    ROUND(h.total_cost, 2) AS total_cost,
     pe.patient_overall_evaluation_average,
     ROUND((
         he.medical_care_score
@@ -50,10 +50,14 @@ SELECT
         + he.food_score
         + he.overall_experience_score
     ) / 5, 2) AS hospitalization_evaluation_average
-FROM patient_history ph
-JOIN hospitalization h ON h.hosp_id = ph.hosp_id
+FROM patient p
+JOIN hospitalization h FORCE INDEX (idx_hosp_patient_dept_dates)
+    ON h.patient_amka = p.patient_amka
+JOIN department d ON d.department_id = h.department_id
+JOIN ken k ON k.ken_code = h.ken_code
+JOIN icd10_diagnosis adm ON adm.icd10_code = h.admission_icd10_code
 LEFT JOIN icd10_diagnosis disc ON disc.icd10_code = h.discharge_icd10_code
-LEFT JOIN hospitalization_evaluation he ON he.hosp_id = ph.hosp_id
-LEFT JOIN patient_eval pe ON pe.patient_amka = ph.patient_amka
-WHERE ph.patient_amka = @target_patient_amka
-ORDER BY ph.admission_ts;
+LEFT JOIN hospitalization_evaluation he ON he.hosp_id = h.hosp_id
+LEFT JOIN patient_eval pe ON pe.patient_amka = p.patient_amka
+WHERE p.patient_amka = @target_patient_amka
+ORDER BY h.admission_ts DESC;
