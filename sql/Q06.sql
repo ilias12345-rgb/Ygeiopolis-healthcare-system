@@ -23,9 +23,10 @@ WITH patient_eval AS (
             + he.cleanliness_score
             + he.food_score
             + he.overall_experience_score
-        ) / 5), 2) AS patient_overall_evaluation_average
+    ) / 5), 2) AS patient_overall_evaluation_average
     FROM hospitalization h
     JOIN hospitalization_evaluation he ON he.hosp_id = h.hosp_id
+    WHERE h.patient_amka = @target_patient_amka
     GROUP BY h.patient_amka
 )
 SELECT
