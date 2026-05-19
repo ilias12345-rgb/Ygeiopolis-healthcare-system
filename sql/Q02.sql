@@ -1,4 +1,4 @@
-USE yg_eupolis_hospital;
+USE ygeiopolis;
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 SET @target_specialization = 'CARDIOLOGY';

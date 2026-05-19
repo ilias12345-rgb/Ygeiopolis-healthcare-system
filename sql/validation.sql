@@ -1,4 +1,4 @@
-USE yg_eupolis_hospital;
+USE ygeiopolis;
 
 -- Use a fixed dataset date so validation is reproducible on every laptop.
 -- The generated bed statuses are synchronized to this same timestamp.

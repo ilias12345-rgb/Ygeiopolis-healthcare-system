@@ -88,7 +88,7 @@ These commands omit `-p` so MySQL does not show an interactive password prompt d
 
 The scripts do three things:
 
-1. `install.sql` creates the `yg_eupolis_hospital` database and all schema objects.
+1. `install.sql` creates the `ygeiopolis` database and all schema objects.
 2. `load.sql` loads the included CSV data from relative paths under `data/reference` and `data/generated`.
 3. `validation.sql` prints row counts and runs problem-detection queries. The problem-detection queries should return zero rows.
 

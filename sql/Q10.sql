@@ -1,4 +1,4 @@
-USE yg_eupolis_hospital;
+USE ygeiopolis;
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Q10: Most frequent pairs of active substances prescribed in the same hospitalization.

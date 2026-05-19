@@ -286,7 +286,7 @@ def db_config_from_sidebar() -> DbConfig:
             port = st.number_input("Port", value=int(secret_value("DB_PORT", "3306")), min_value=1, max_value=65535)
             user = st.text_input("User", value=secret_value("DB_USER", "root"))
             password = st.text_input("Password", value=secret_value("DB_PASSWORD", ""), type="password")
-            database = st.text_input("Database", value=secret_value("DB_NAME", "yg_eupolis_hospital"))
+            database = st.text_input("Database", value=secret_value("DB_NAME", "ygeiopolis"))
             socket_default = secret_value("DB_SOCKET", detected_socket)
             unix_socket = st.text_input("Unix socket", value=socket_default)
 
@@ -295,7 +295,7 @@ def db_config_from_sidebar() -> DbConfig:
             port=int(port),
             user=user.strip() or "root",
             password=password,
-            database=database.strip() or "yg_eupolis_hospital",
+            database=database.strip() or "ygeiopolis",
             unix_socket=unix_socket.strip(),
         )
 

@@ -11,7 +11,7 @@ import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 SQL_DIR = PROJECT_ROOT / "sql"
-DEFAULT_DATABASE = "yg_eupolis_hospital"
+DEFAULT_DATABASE = "ygeiopolis"
 SOCKET_CANDIDATES = (
     "/tmp/mysql.sock",
     "/var/run/mysqld/mysqld.sock",

@@ -1,8 +1,8 @@
-DROP DATABASE IF EXISTS yg_eupolis_hospital;
-CREATE DATABASE yg_eupolis_hospital
+DROP DATABASE IF EXISTS ygeiopolis;
+CREATE DATABASE ygeiopolis
   CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
-USE yg_eupolis_hospital;
+USE ygeiopolis;
 
 SET FOREIGN_KEY_CHECKS = 0;
 

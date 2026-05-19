@@ -5,7 +5,7 @@
 -- Therefore run the command from the repository root where data/ exists.
 -- Each LOAD DATA block trims a possible trailing '\r' from the final CSV
 -- field so the same loader works with both LF and accidental Windows CRLF CSVs.
-USE yg_eupolis_hospital;
+USE ygeiopolis;
 SET FOREIGN_KEY_CHECKS = 1;
 
 LOAD DATA LOCAL INFILE 'data/reference/icd10_diagnosis.csv'
