@@ -4,7 +4,7 @@ SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 SET @target_specialization = 'CARDIOLOGY';
 SET @target_year = 2026;
 
--- Q02: Doctors of one specialization, with yearly shifts and surgical work.
+/*Q02: Doctors of one specialization, with yearly shifts and surgical work.*/
 SELECT
     d.amka AS doctor_amka,
     CONCAT(p.first_name, ' ', p.last_name) AS doctor_name,
