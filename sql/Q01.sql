@@ -6,7 +6,6 @@ SELECT
     d.department_name,
     YEAR(h.admission_ts) AS admission_year,
     h.ken_code,
-    k.ken_description,
     p.insurance_provider,
 
     COUNT(*) AS total_hospitalizations,
@@ -50,7 +49,6 @@ GROUP BY
     d.department_name,
     YEAR(h.admission_ts),
     h.ken_code,
-    k.ken_description,
     p.insurance_provider,
     k.mean_duration_days
 

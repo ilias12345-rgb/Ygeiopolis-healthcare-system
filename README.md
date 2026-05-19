@@ -77,11 +77,11 @@ The macOS/Linux script verifies that it is running from the repository root, ena
 The runner scripts execute these commands:
 
 ```bash
-mysql -u root -e "SET GLOBAL local_infile = 1;"
-mysql -u root -e "SHOW GLOBAL VARIABLES LIKE 'local_infile';"
-mysql -u root < sql/install.sql
-mysql --local-infile=1 -u root < sql/load.sql
-mysql -u root < sql/validation.sql
+mysql --default-character-set=utf8mb4 -u root -e "SET GLOBAL local_infile = 1;"
+mysql --default-character-set=utf8mb4 -u root -e "SHOW GLOBAL VARIABLES LIKE 'local_infile';"
+mysql --default-character-set=utf8mb4 -u root < sql/install.sql
+mysql --default-character-set=utf8mb4 --local-infile=1 -u root < sql/load.sql
+mysql --default-character-set=utf8mb4 -u root < sql/validation.sql
 ```
 
 These commands omit `-p` so MySQL does not show an interactive password prompt during timed runs.
@@ -96,7 +96,7 @@ To regenerate the final query outputs after loading the database:
 
 ```bash
 for n in $(seq -w 1 15); do
-  mysql -t -u root < "sql/Q${n}.sql" > "sql/Q${n}_out.txt"
+  mysql --default-character-set=utf8mb4 -t -u root < "sql/Q${n}.sql" > "sql/Q${n}_out.txt"
 done
 ```
 
@@ -213,8 +213,8 @@ The Streamlit app is optional. The database can always be installed and queried 
 
 ## Troubleshooting Local Infile
 
-- If `LOAD DATA LOCAL INFILE` is rejected, run `mysql -u root -e "SET GLOBAL local_infile = 1;"` and reconnect with `mysql --local-infile=1`.
-- Confirm the setting with `mysql -u root -e "SHOW GLOBAL VARIABLES LIKE 'local_infile';"`.
+- If `LOAD DATA LOCAL INFILE` is rejected, run `mysql --default-character-set=utf8mb4 -u root -e "SET GLOBAL local_infile = 1;"` and reconnect with `mysql --default-character-set=utf8mb4 --local-infile=1`.
+- Confirm the setting with `mysql --default-character-set=utf8mb4 -u root -e "SHOW GLOBAL VARIABLES LIKE 'local_infile';"`.
 - If a CSV file is reported as missing, confirm that the command is being run from the repository root.
 - `load.sql` intentionally uses relative paths such as `data/reference/icd10_diagnosis.csv` and `data/generated/patient.csv`.
 - On Windows, prefer `run_database_windows.bat`; it normalizes CSV line endings before loading. This avoids hidden `\r` characters in foreign keys, check values, and nullable columns.

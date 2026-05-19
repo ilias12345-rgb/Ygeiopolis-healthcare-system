@@ -26,23 +26,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='
 if errorlevel 1 exit /b 1
 
 echo Enabling MySQL local_infile...
-mysql -u %MYSQL_USER% -e "SET GLOBAL local_infile = 1;"
+mysql --default-character-set=utf8mb4 -u %MYSQL_USER% -e "SET GLOBAL local_infile = 1;"
 if errorlevel 1 exit /b 1
 
 echo Checking local_infile...
-mysql -u %MYSQL_USER% -e "SHOW GLOBAL VARIABLES LIKE 'local_infile';"
+mysql --default-character-set=utf8mb4 -u %MYSQL_USER% -e "SHOW GLOBAL VARIABLES LIKE 'local_infile';"
 if errorlevel 1 exit /b 1
 
 echo Installing schema...
-mysql -u %MYSQL_USER% < sql\install.sql
+mysql --default-character-set=utf8mb4 -u %MYSQL_USER% < sql\install.sql
 if errorlevel 1 exit /b 1
 
 echo Loading included CSV data...
-mysql --local-infile=1 -u %MYSQL_USER% < sql\load.sql
+mysql --default-character-set=utf8mb4 --local-infile=1 -u %MYSQL_USER% < sql\load.sql
 if errorlevel 1 exit /b 1
 
 echo Running validation...
-mysql -u %MYSQL_USER% < sql\validation.sql
+mysql --default-character-set=utf8mb4 -u %MYSQL_USER% < sql\validation.sql
 if errorlevel 1 exit /b 1
 
 echo Done. The Ygeiopolis database was installed, loaded, and validated.

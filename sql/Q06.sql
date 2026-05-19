@@ -36,8 +36,7 @@ WITH patient_eval AS (
 SELECT
     /* Patient identity. */
     p.patient_amka,
-    p.first_name,
-    p.last_name,
+    CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
 
     /* Hospitalization facts. */
     h.hosp_id,
@@ -47,13 +46,10 @@ SELECT
 
     /* Admission and discharge diagnoses. */
     h.admission_icd10_code,
-    adm.icd10_description AS admission_diagnosis,
     h.discharge_icd10_code,
-    disc.icd10_description AS discharge_diagnosis,
 
     /* KEN billing information. */
     h.ken_code,
-    k.ken_description,
     ROUND(h.total_cost, 2) AS total_cost,
 
     /* Patient-level average evaluation across all evaluated hospitalizations. */
@@ -72,9 +68,6 @@ JOIN hospitalization h
     /* idx_hosp_patient_admission_q6 supports patient filtering and admission-date ordering.*/
     ON h.patient_amka = p.patient_amka
 JOIN department d ON d.department_id = h.department_id /*department where the patient was hospitalized*/
-JOIN ken k ON k.ken_code = h.ken_code /* KEN description and cost category */
-JOIN icd10_diagnosis adm ON adm.icd10_code = h.admission_icd10_code /* admission diagnosis is mandatory*/
-LEFT JOIN icd10_diagnosis disc ON disc.icd10_code = h.discharge_icd10_code /* discharge diagnosis may be missing*/
 LEFT JOIN hospitalization_evaluation he ON he.hosp_id = h.hosp_id /* keep hospitalizations even if no evaluation exists*/
 LEFT JOIN patient_eval pe ON pe.patient_amka = p.patient_amka /* attach the patient-level average*/
 WHERE p.patient_amka = @target_patient_amka /* show history only for the selected patient*/

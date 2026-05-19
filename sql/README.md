@@ -21,9 +21,9 @@ Example:
 
 ```bash
 cd Ygeiopolis-healthcare-system
-mysql -u root < sql/install.sql
-mysql --local-infile=1 -u root < sql/load.sql
-mysql -u root < sql/validation.sql
+mysql --default-character-set=utf8mb4 -u root < sql/install.sql
+mysql --default-character-set=utf8mb4 --local-infile=1 -u root < sql/load.sql
+mysql --default-character-set=utf8mb4 -u root < sql/validation.sql
 ```
 
 You can also use the root helper script: `bash run_database.sh`.
@@ -32,7 +32,7 @@ To regenerate all final query output files after loading the database:
 
 ```bash
 for n in $(seq -w 1 15); do
-  mysql -t -u root < "sql/Q${n}.sql" > "sql/Q${n}_out.txt"
+  mysql --default-character-set=utf8mb4 -t -u root < "sql/Q${n}.sql" > "sql/Q${n}_out.txt"
 done
 ```
 
