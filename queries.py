@@ -93,6 +93,8 @@ def first_sql_keyword(sql_text: str) -> str:
         if line.startswith("/*"):
             if "*/" in line:
                 line = line.split("*/", 1)[1].strip()
+                if not line:
+                    continue
             else:
                 in_block_comment = True
                 continue
@@ -127,11 +129,15 @@ def is_safe_predefined_script(sql_text: str) -> bool:
     statements = split_sql_statements(sql_text)
     if not statements:
         return False
+    has_executable_statement = False
     for statement in statements:
         keyword = first_sql_keyword(statement)
+        if not keyword:
+            continue
+        has_executable_statement = True
         if keyword in DESTRUCTIVE_KEYWORDS or keyword not in SCRIPT_ALLOWED_KEYWORDS:
             return False
-    return True
+    return has_executable_statement
 
 
 def mysql_cli_args(config: DbConfig, include_database: bool = False) -> list[str]:
@@ -235,6 +241,8 @@ def execute_sql(sql_text: str, config: DbConfig) -> SqlResult:
 
             for statement in statements:
                 keyword = first_sql_keyword(statement)
+                if not keyword:
+                    continue
                 cursor.execute(statement)
                 if cursor.with_rows:
                     columns = [column[0] for column in cursor.description]
@@ -296,6 +304,8 @@ def execute_readonly_script(sql_text: str, config: DbConfig) -> list[SqlResult]:
         try:
             for statement in split_sql_statements(sql_clean):
                 keyword = first_sql_keyword(statement)
+                if not keyword:
+                    continue
                 cursor.execute(statement)
                 if cursor.with_rows:
                     columns = [column[0] for column in cursor.description]

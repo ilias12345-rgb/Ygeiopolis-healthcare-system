@@ -14,8 +14,6 @@ The database models hospital departments, staff, shifts, emergency triage, patie
 │   ├── relational.pdf
 │   └── schema.pdf
 ├── docs/
-│   ├── report.pdf
-│   ├── report.txt
 │   └── exercise-brief-2025-2026.pdf
 ├── data/
 │   ├── reference/
@@ -185,9 +183,9 @@ A Streamlit application is included for local demonstrations. It is a read-only 
 
 Application files:
 
-- `app.py`: Streamlit entrypoint.
-- `ui.py`: page layout and Streamlit controls.
-- `queries.py`: query-file handling, MySQL connection, setup execution, and output saving.
+- `app.py`: Streamlit entrypoint; it starts the UI.
+- `ui.py`: page layout, sidebar navigation, dashboard pages, query workspace, and validation screen.
+- `queries.py`: query-file handling, MySQL connection helpers, safe predefined-query execution, and output saving.
 - `streamlit_app.py`: compatibility wrapper that calls `app.py`.
 - `.streamlit/config.toml`: application theme.
 
@@ -333,7 +331,7 @@ The assignment PDF asks for the following final structure:
 - `README.md`
 - `diagrams/er.pdf`
 - `diagrams/relational.pdf`
-- `docs/report.pdf`
+- `docs/report.pdf` (add before final hand-in)
 - `sql/install.sql`
 - `sql/load.sql`
 - `sql/validation.sql`
@@ -345,4 +343,4 @@ The assignment PDF asks for the following final structure:
 - `requirements.txt`
 - optional `app.py`, `ui.py`, and `queries.py` if an application/demo UI is submitted
 
-The repository includes the expected final query outputs and the final PDF filenames listed above. The plain-text report source is kept as `docs/report.txt` so the PDF contents remain easy to inspect.
+The repository includes the expected final query output files. Add `docs/report.pdf` before the final hand-in.

@@ -941,6 +941,8 @@ def render_medication_safety(config: DbConfig) -> None:
 
 
 def parse_query_parameters(sql: str) -> list[dict[str, Any]]:
+    # Query files use SET @variables for deterministic demo inputs.
+    # These controls let the UI override only those predefined variables.
     params = []
     seen = set()
     for match in SET_PARAMETER_PATTERN.finditer(sql):
@@ -956,6 +958,7 @@ def parse_query_parameters(sql: str) -> list[dict[str, Any]]:
 
 
 def apply_query_parameters(sql: str, values: dict[str, dict[str, Any]]) -> str:
+    # Keep the original SQL shape and replace only the SET lines exposed above.
     def replace(match: re.Match[str]) -> str:
         variable = match.group(1)
         value = values.get(variable)
@@ -970,6 +973,7 @@ def apply_query_parameters(sql: str, values: dict[str, dict[str, Any]]) -> str:
 
 
 def query_inventory() -> pd.DataFrame:
+    # The workspace is intentionally limited to the submitted Q01-Q15 files.
     rows = []
     for q in query_files():
         sql = read_query(q).strip()
@@ -1070,6 +1074,8 @@ def render_app() -> None:
     page = st.session_state.get("page", PAGES[0])
     add_audit(f"Opened {page}")
 
+    # Page routing is kept in one place so every sidebar option maps clearly
+    # to one render_* function.
     if page == "Executive Overview":
         render_exec_overview(config)
     elif page == "Patient Lookup":
