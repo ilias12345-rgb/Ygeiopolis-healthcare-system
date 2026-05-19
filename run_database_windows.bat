@@ -2,9 +2,12 @@
 setlocal
 
 REM Run this file from the repository root on Windows Command Prompt.
+REM UTF-8 is required so Greek ICD/KEN text is displayed correctly.
 REM Usage:
 REM   run_database_windows.bat
 REM   run_database_windows.bat my_mysql_user
+
+chcp 65001 >nul
 
 set MYSQL_USER=%1
 if "%MYSQL_USER%"=="" set MYSQL_USER=root

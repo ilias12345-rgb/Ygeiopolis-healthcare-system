@@ -100,6 +100,21 @@ for n in $(seq -w 1 15); do
 done
 ```
 
+On Windows Command Prompt, use the provided query runner instead of opening `mysql -u root -p` manually. It switches the console and the MySQL connection to UTF-8, which is required for Greek KEN/ICD values:
+
+```bat
+run_query_windows.bat Q01
+run_query_windows.bat Q06
+```
+
+Manual Windows equivalent:
+
+```bat
+chcp 65001
+mysql --default-character-set=utf8mb4 -t -u root -p < sql\Q01.sql
+mysql --default-character-set=utf8mb4 -t -u root -p < sql\Q06.sql
+```
+
 ### Expected Validation Counts
 
 After a successful load, the main operational tables should be populated. The current included dataset is expected to show approximately these counts:
@@ -218,6 +233,7 @@ The Streamlit app is optional. The database can always be installed and queried 
 - If a CSV file is reported as missing, confirm that the command is being run from the repository root.
 - `load.sql` intentionally uses relative paths such as `data/reference/icd10_diagnosis.csv` and `data/generated/patient.csv`.
 - On Windows, prefer `run_database_windows.bat`; it normalizes CSV line endings before loading. This avoids hidden `\r` characters in foreign keys, check values, and nullable columns.
+- If Greek KEN/ICD values look garbled in Windows Command Prompt, run queries through `run_query_windows.bat Q01` or start the terminal with `chcp 65001` and connect using `mysql --default-character-set=utf8mb4`.
 - If Windows reports `ERROR 1644 (45000): A director doctor cannot have a supervisor` or validation shows many zero-count clinical tables after `load.sql`, pull the latest version and run `run_database_windows.bat` from a fresh clone.
 - Zero rows in operational tables such as `patient`, `hospitalization`, `lab_test`, `procedure_event`, `drug`, or `prescription` indicate a failed or incomplete load.
 
