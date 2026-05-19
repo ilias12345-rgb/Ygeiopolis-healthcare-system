@@ -615,6 +615,7 @@ SELECT
     ds.department_id,
     d.department_name,
     ds.shift_date,
+    YEAR(ds.shift_date) AS shift_year,
     ds.shift_type,
     ds.start_time,
     ds.end_time,
