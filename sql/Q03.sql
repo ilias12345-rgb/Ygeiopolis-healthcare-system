@@ -4,7 +4,8 @@ SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 /* Q03: Patients hospitalized more than three times in the same department. */
 SELECT
     patient_amka,
-    patient_name,
+    first_name,
+    last_name,
     department_name,
     COUNT(hosp_id) AS hospitalization_count,
     ROUND(SUM(total_cost), 2) AS total_hospitalization_cost
