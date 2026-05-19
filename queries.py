@@ -88,6 +88,8 @@ def first_sql_keyword(sql_text: str) -> str:
             if "*/" in line:
                 in_block_comment = False
                 line = line.split("*/", 1)[1].strip()
+                if not line:
+                    continue
             else:
                 continue
         if line.startswith("/*"):

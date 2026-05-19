@@ -9,7 +9,7 @@ SELECT
     COUNT(hosp_id) AS hospitalization_count,
     ROUND(SUM(total_cost), 2) AS total_hospitalization_cost
 
-FROM patient_history
+FROM v_patient_hospitalization
 
 GROUP BY
     patient_amka,
