@@ -1,7 +1,7 @@
 USE ygeiopolis;
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Q10: Most frequent pairs of active substances prescribed in the same hospitalization.
+/* Q10: Most frequent pairs of active substances prescribed in the same hospitalization. */
 SELECT ps1.substance_id, ps1.substance_name, ps2.substance_id, ps2.substance_name, COUNT(*) AS frequency
 FROM prescription_substances ps1
 JOIN prescription_substances ps2 ON ps1.hosp_id = ps2.hosp_id
