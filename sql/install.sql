@@ -629,37 +629,6 @@ JOIN department d ON d.department_id = ds.department_id
 JOIN shift_assignment sa ON sa.shift_id = ds.shift_id
 JOIN personnel p ON p.amka = sa.personnel_amka;
 
-CREATE VIEW doctor_procedure AS
-SELECT
-    pe.procedure_event_id,
-    pe.hosp_id,
-    pe.procedure_code,
-    pc.procedure_name,
-    pc.procedure_category,
-    pe.chief_surgeon_amka AS doctor_amka,
-    p.first_name,
-    p.last_name,
-    d.specialization,
-    d.doctor_rank,
-    pe.place_id,
-    op.place_name,
-    pe.start_ts,
-    pe.end_ts,
-    pe.actual_duration_min
-FROM procedure_event pe
-JOIN procedure_catalog pc ON pc.procedure_code = pe.procedure_code
-JOIN doctor d ON d.amka = pe.chief_surgeon_amka
-JOIN personnel p ON p.amka = d.amka
-JOIN operating_place op ON op.place_id = pe.place_id;
-
-/* Compatibility/reporting views used by the final Q01-Q15 query files.
-   They keep the SQL queries readable without changing the normalized tables. */
-CREATE VIEW v_shift_staff AS
-SELECT
-    ss.*,
-    YEAR(ss.shift_date) AS shift_year,
-    CONCAT(ss.first_name, ' ', ss.last_name) AS personnel_name
-FROM shift_staff ss;
 
 CREATE VIEW v_doctor_procedure_event AS
 SELECT
@@ -675,23 +644,6 @@ SELECT
     ) AS department_names
 FROM doctor_procedure dp
 JOIN personnel per ON per.amka = dp.doctor_amka;
-
-CREATE VIEW v_patient_hospitalization AS
-SELECT
-    ph.patient_amka,
-    CONCAT(ph.first_name, ' ', ph.last_name) AS patient_name,
-    ph.insurance_provider,
-    ph.hosp_id,
-    ph.department_id,
-    ph.department_name,
-    ph.admission_ts,
-    ph.discharge_ts,
-    ph.total_cost,
-    ph.icd10_code,
-    ph.icd10_description,
-    ph.ken_code,
-    ph.ken_description
-FROM patient_history ph;
 
 DELIMITER $$
 
