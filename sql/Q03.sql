@@ -14,7 +14,8 @@ FROM patient_history
 
 GROUP BY
     patient_amka,
-    patient_name,
+    first_name,
+    last_name,
     department_id,
     department_name
 
