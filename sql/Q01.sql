@@ -1,7 +1,7 @@
 USE ygeiopolis;
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Q01: Revenue per department, admission year, KEN, and insurance provider.
+/* Q01: Revenue per department, admission year, KEN, and insurance provider. */
 SELECT
     d.department_name,
     YEAR(h.admission_ts) AS admission_year,
