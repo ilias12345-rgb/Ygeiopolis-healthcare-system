@@ -1,7 +1,7 @@
 USE ygeiopolis;
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Q09: Patients with matching yearly hospitalization-day totals above 15 days.
+/* Q09: Patients with matching yearly hospitalization-day totals above 15 days. */
 WITH patient_totals AS (
     /* Total hospitalization days per patient and year. */
     SELECT 
