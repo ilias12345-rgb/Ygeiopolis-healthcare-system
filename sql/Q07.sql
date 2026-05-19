@@ -1,8 +1,8 @@
 USE ygeiopolis;
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Q07: For every active substance, count allergy declarations and the
--- number of official EMA drugs that contain it.
+/* Q07: For every active substance, count allergy declarations and the
+ number of official EMA drugs that contain it.*/
 SELECT
     a.substance_id,
     a.substance_name,
