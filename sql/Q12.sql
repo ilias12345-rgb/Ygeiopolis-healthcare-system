@@ -1,7 +1,7 @@
 USE ygeiopolis;
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Q12: Weekly staffing requirements by department, shift type, and personnel subclass.
+/* Q12: Weekly staffing requirements by department, shift type, and personnel subclass.*/
 SELECT department_name, shift_type, shift_date, COUNT(*) AS required_personnel,
     CASE
         WHEN s.personnel_type = 'DOCTOR' THEN d.specialization
