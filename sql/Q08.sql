@@ -1,7 +1,7 @@
 USE ygeiopolis;
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Q08: Personnel not assigned to a specific department shift date.
+/* Q08: Personnel not assigned to a specific department shift date.*/
 SELECT first_name, last_name, amka, personnel_type
 FROM personnel
 WHERE amka NOT IN (
