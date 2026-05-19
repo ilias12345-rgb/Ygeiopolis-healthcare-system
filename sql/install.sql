@@ -630,6 +630,29 @@ JOIN department d ON d.department_id = ds.department_id
 JOIN shift_assignment sa ON sa.shift_id = ds.shift_id
 JOIN personnel p ON p.amka = sa.personnel_amka;
 
+CREATE VIEW doctor_procedure AS
+SELECT
+    pe.procedure_event_id,
+    pe.hosp_id,
+    pe.procedure_code,
+    pc.procedure_name,
+    pc.procedure_category,
+    pe.chief_surgeon_amka AS doctor_amka,
+    p.first_name,
+    p.last_name,
+    d.specialization,
+    d.doctor_rank,
+    pe.place_id,
+    op.place_name,
+    pe.start_ts,
+    pe.end_ts,
+    pe.actual_duration_min
+FROM procedure_event pe
+JOIN procedure_catalog pc ON pc.procedure_code = pe.procedure_code
+JOIN doctor d ON d.amka = pe.chief_surgeon_amka
+JOIN personnel p ON p.amka = d.amka
+JOIN operating_place op ON op.place_id = pe.place_id;
+
 
 CREATE VIEW v_doctor_procedure_event AS
 SELECT
