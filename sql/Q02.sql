@@ -28,7 +28,7 @@ LEFT JOIN (
     SELECT
         personnel_amka AS doctor_amka,
         COUNT(DISTINCT shift_id) AS shift_total
-    FROM v_shift_staff
+    FROM shift_staff
     WHERE personnel_type = 'DOCTOR'
       AND shift_year = @target_year
     GROUP BY personnel_amka
