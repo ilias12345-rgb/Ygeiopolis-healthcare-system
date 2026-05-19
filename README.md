@@ -10,9 +10,7 @@ The database models hospital departments, staff, shifts, emergency triage, patie
 .
 ├── diagrams/
 │   ├── er.pdf
-│   ├── er_diagram.png
-│   ├── relational.pdf
-│   └── schema.pdf
+│   └── relational.pdf
 ├── docs/
 │   └── exercise-brief-2025-2026.pdf
 ├── data/
