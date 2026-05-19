@@ -70,16 +70,17 @@ totals once and uses them as denominators for final percentages.
 
 7. Index and EXPLAIN checks
 
-Indexes were added for the most important filtering and join paths. Q04 uses
-hospitalization_doctor through doctor_amka; the optimal lookup is the
-foreign-key-created index fk_hosp_doctor_doctor. The evaluation lookup uses
-idx_evaluation_evaluation on hosp_id. Q06 benefits from
-idx_hosp_patient_admission_q6 because the query filters by patient_amka and
-orders by admission_ts.
+Indexes were added for the most important filtering and join paths. Q04 lets
+the optimizer choose the join plan naturally. The important access paths are
+the foreign-key-created index fk_hosp_doctor_doctor on
+hospitalization_doctor(doctor_amka) and the hosp_id lookup on
+hospitalization_evaluation, where the optimizer may use the PRIMARY key because
+hosp_id is the primary key. Q06 benefits from idx_hosp_patient_admission_q6
+because the query filters by patient_amka and orders by admission_ts.
 
-During testing, EXPLAIN ANALYZE was used with FORCE INDEX variants to compare
-optimal and non-optimal plans. The final submitted query files do not contain
-EXPLAIN ANALYZE; they return the required result tables.
+During testing, EXPLAIN ANALYZE was used to inspect the optimizer plan. The
+final submitted query files do not contain EXPLAIN ANALYZE; they return the
+required result tables.
 
 8. Application note
 
