@@ -12,7 +12,7 @@ The repository contains the final MySQL/MariaDB schema, CSV data, validation scr
 │   ├── reference/
 │   └── generated/
 ├── diagrams/
-│   ├── er.pdf
+│   ├── ER.pdf
 │   └── relational.pdf
 ├── docs/
 |   ├── Report_Ygeiopolis.pdf
