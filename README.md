@@ -15,6 +15,7 @@ The repository contains the final MySQL/MariaDB schema, CSV data, validation scr
 │   ├── er.pdf
 │   └── relational.pdf
 ├── docs/
+|   ├── Report_Ygeiopolis.pdf
 │   └── exercise-brief-2025-2026.pdf
 ├── sql/
 │   ├── install.sql
@@ -31,7 +32,6 @@ The repository contains the final MySQL/MariaDB schema, CSV data, validation scr
 ├── run_database_windows.bat
 ├── run_query_windows.bat
 ├── requirements.txt
-├── Report_Ygeiopolis.pdf
 └── README.md
 ```
 
