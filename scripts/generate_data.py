@@ -107,8 +107,18 @@ def parse_money_eur(s):
     if not s:
         return None
     s = s.replace("€", "").replace("EUR", "").strip()
-    s = s.replace(".", "").replace(",", ".")
-    s = re.sub(r"[^0-9.]", "", s)
+    s = re.sub(r"[^0-9.,]", "", s)
+    if "." in s and "," in s:
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif "," in s:
+        parts = s.split(",")
+        s = s.replace(",", ".") if len(parts[-1]) in {1, 2} else s.replace(",", "")
+    elif "." in s:
+        parts = s.split(".")
+        s = s if len(parts[-1]) in {1, 2} else s.replace(".", "")
     try:
         return float(s) if s else None
     except ValueError:

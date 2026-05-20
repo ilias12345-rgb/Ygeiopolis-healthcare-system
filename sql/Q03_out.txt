@@ -1,22 +1,22 @@
-+--------------+-------------------------+-----------------+-----------------------+----------------------------+
-| patient_amka | patient_name            | department_name | hospitalization_count | total_hospitalization_cost |
-+--------------+-------------------------+-----------------+-----------------------+----------------------------+
-| 30000000987  | Anna Pavlidis           | Orthopedics     |                     5 |                 2895900.00 |
-| 30000004740  | Sofia Nikolaou          | Orthopedics     |                     5 |                 2586650.00 |
-| 30000003602  | Petros Vasiliou         | Cardiology      |                     5 |                 2238600.00 |
-| 30000001384  | Giorgos Dimitriou       | Orthopedics     |                     5 |                 2156700.00 |
-| 30000000003  | Evangelia Pavlidis      | Pulmonology     |                     5 |                 1634600.00 |
-| 30000003874  | Spyros Vasiliou         | Surgery         |                     5 |                  989800.00 |
-| 30000001715  | Eleni Sotiriou          | Neurology       |                     5 |                  684400.00 |
-| 30000004970  | Panagiotis Konstantinou | ENT             |                     5 |                  635900.00 |
-| 30000004415  | Chrysoula Konstantinou  | Surgery         |                     5 |                  546500.00 |
-| 30000002590  | Michalis Kostopoulos    | Oncology        |                     4 |                 3451100.00 |
-| 30000004087  | Evangelia Lazarou       | Orthopedics     |                     4 |                 2418900.00 |
-| 30000004588  | Sofia Petrou            | Oncology        |                     4 |                 1924000.00 |
-| 30000000527  | Anna Theodorou          | Neurology       |                     4 |                 1598600.00 |
-| 30000003941  | Natalia Athanasiou      | Cardiology      |                     4 |                 1543080.00 |
-| 30000002781  | Theodoros Athanasiou    | Cardiology      |                     4 |                 1157200.00 |
-| 30000000202  | Nikos Pavlidis          | Cardiology      |                     4 |                  922220.00 |
-| 30000004305  | Eleni Alexiou           | Cardiology      |                     4 |                  825800.00 |
-| 30000000870  | Panagiota Papadopoulos  | Nephrology      |                     4 |                  546850.00 |
-+--------------+-------------------------+-----------------+-----------------------+----------------------------+
++--------------+------------+--------------+-----------------+-----------------------+----------------------------+
+| patient_amka | first_name | last_name    | department_name | hospitalization_count | total_hospitalization_cost |
++--------------+------------+--------------+-----------------+-----------------------+----------------------------+
+| 30000000987  | Anna       | Pavlidis     | Orthopedics     |                     5 |                   28959.00 |
+| 30000004740  | Sofia      | Nikolaou     | Orthopedics     |                     5 |                   25866.50 |
+| 30000003602  | Petros     | Vasiliou     | Cardiology      |                     5 |                   22386.00 |
+| 30000001384  | Giorgos    | Dimitriou    | Orthopedics     |                     5 |                   21567.00 |
+| 30000000003  | Evangelia  | Pavlidis     | Pulmonology     |                     5 |                   16346.00 |
+| 30000003874  | Spyros     | Vasiliou     | Surgery         |                     5 |                    9898.00 |
+| 30000001715  | Eleni      | Sotiriou     | Neurology       |                     5 |                    6844.00 |
+| 30000004970  | Panagiotis | Konstantinou | ENT             |                     5 |                    6359.00 |
+| 30000004415  | Chrysoula  | Konstantinou | Surgery         |                     5 |                    5465.00 |
+| 30000002590  | Michalis   | Kostopoulos  | Oncology        |                     4 |                   34511.00 |
+| 30000004087  | Evangelia  | Lazarou      | Orthopedics     |                     4 |                   24189.00 |
+| 30000004588  | Sofia      | Petrou       | Oncology        |                     4 |                   19240.00 |
+| 30000000527  | Anna       | Theodorou    | Neurology       |                     4 |                   15986.00 |
+| 30000003941  | Natalia    | Athanasiou   | Cardiology      |                     4 |                   15430.80 |
+| 30000002781  | Theodoros  | Athanasiou   | Cardiology      |                     4 |                   11572.00 |
+| 30000000202  | Nikos      | Pavlidis     | Cardiology      |                     4 |                    9222.20 |
+| 30000004305  | Eleni      | Alexiou      | Cardiology      |                     4 |                    8258.00 |
+| 30000000870  | Panagiota  | Papadopoulos | Nephrology      |                     4 |                    5468.50 |
++--------------+------------+--------------+-----------------+-----------------------+----------------------------+
